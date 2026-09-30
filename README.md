@@ -2,7 +2,7 @@
 
 > A council of LLMs that answer independently, object to each other, verify claims with tools — and return one answer with honest disagreement.
 
-**Status:** design stage. No code yet — see [docs/](docs/).
+**Status:** early M0. Works today: the `deliberate` preset (independent answers → synthesis), CLI, run history in SQLite, and the Web UI (chat + run trace, light/dark themes). Design docs: [docs/](docs/).
 
 ## Why
 
@@ -16,11 +16,39 @@ Asking several models and letting them "debate until they agree" sounds great, b
 - **Your models, your pool** — any model via [LiteLLM](https://github.com/BerriAI/litellm) (cloud or local: Ollama, vLLM, LM Studio). The pool is defined by you and can change at any time.
 - **Honest output** — confidence, agreement, disputed points and a minority report, not a fake consensus.
 
-## Planned interfaces
+## Quick start
+
+```bash
+pip install git+https://github.com/lineSence/Objection-.git
+objection ui          # Web UI at http://127.0.0.1:8765
+objection ask "SQLite or PostgreSQL for run history?"
+```
+
+Without a config Objection! uses offline `mock/*` models, so you can try the UI right away. Define your own pool in `~/.objection/config.yaml` (or `./objection.yaml`, or `$OBJECTION_CONFIG`) — see [the example](examples/objection.example.yaml). API keys are read by LiteLLM from the usual environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …).
+
+| Command | What it does |
+| --- | --- |
+| `objection ask "…" [--json] [-m a,b,c] [--budget 0.2]` | Ask the council; exit code 1 on failure |
+| `objection ui [--port 8765]` | Local Web UI (binds to 127.0.0.1) |
+| `objection models list` / `check` | Show / health-check the pool |
+| `objection runs list` / `show <id>` | Run history |
+
+## Development
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/pytest
+cd web && npm install && npm run dev     # Vite dev server, proxies /api to :8765
+npm run build                            # writes src/objection/web_dist (bundled into the wheel)
+```
+
+Backend: FastAPI inside the Python package (`src/objection`). Frontend: React + TypeScript + Vite (`web/`). The built UI is committed to `src/objection/web_dist`, so installing from git needs no Node.
+
+## Interfaces
 
 - Python library
 - CLI with JSON / Markdown output and CI-friendly exit codes
-- MCP server for agentic coding tools — first targets: **OpenCode** and **Cline**
+- MCP server (M1) for agentic coding tools — first targets: **OpenCode** and **Cline**
 - Web UI from day one: runs dashboard, live run trace, debate and report views; light and dark themes
 - Later: HTTP API and multi-user mode
 

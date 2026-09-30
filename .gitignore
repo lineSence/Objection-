@@ -13,3 +13,7 @@ build/
 .objection/
 *.sqlite
 *.db
+
+# frontend
+web/node_modules/
+web/*.tsbuildinfo

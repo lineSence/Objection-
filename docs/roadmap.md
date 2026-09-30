@@ -1,11 +1,12 @@
 # Roadmap
 
 - [ ] **M0 — каркас**
-  - Python-пакет `objection`, конфиг пула моделей, LiteLLM
-  - Параллельные независимые ответы, пресет `deliberate` (анализ + синтез)
-  - JSON/Markdown-вывод, Run Store (SQLite), Budget Manager, mock-провайдер, CLI
-  - `objection models list/check` — health check пула
-  - Web UI (`objection ui`): экраны «Вопрос» и «Ход запуска», события запуска через SSE, светлая/тёмная/авто тема
+  - [x] Python-пакет `objection`, конфиг пула моделей, LiteLLM, mock-провайдер
+  - [x] Параллельные независимые ответы, пресет `deliberate` (анализ + синтез)
+  - [x] JSON/Markdown-вывод, Run Store (SQLite), CLI `ask` / `runs` / `ui`
+  - [x] `objection models list/check` — health check пула
+  - [x] Web UI (`objection ui`): «Вопрос» и «Ход запуска», события через SSE, темы Авто/Светлая/Тёмная
+  - [ ] Полноценный Budget Manager (сейчас — проверка после фазы), кэш
 - [ ] **M1 — агентный цикл**
   - MCP-сервер (stdio), инструменты `council_ask`, `council_review`, `council_models`
   - Пресет `review`, verdict + exit code, кэш
