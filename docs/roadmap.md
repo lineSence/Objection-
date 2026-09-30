@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] **M0 — каркас**
+- [x] **M0 — каркас**
   - [x] Python-пакет `objection`, конфиг пула моделей, LiteLLM, mock-провайдер
   - [x] Параллельные независимые ответы, пресет `deliberate` (анализ + синтез)
   - [x] JSON/Markdown-вывод, Run Store (SQLite), CLI `ask` / `runs` / `ui`
@@ -36,11 +36,19 @@
   - [x] Защита от prompt injection в результатах инструментов (`<untrusted>`, пометка подозрительного)
   - [x] `check_facts` в `council_ask` / `council_verify`, CLI `--check/--no-check`
   - [x] Web UI: вид «Отчёт» с подсветкой, блок «Проверка фактов», шаги в «Ходе», настройки фактчека (с проверкой SearXNG) и песочницы, KPI «Фактчек»; удаление запусков
-  - [ ] Фактчек для `review`; чтение файлов репозитория как источник доказательств
+  - [x] Фактчек для `review`; чтение файлов репозитория как источник доказательств (метод `repo`)
+- [x] **M3.1 — стабилизация**
+  - [x] Кэш по содержимому `workdir` и настройкам Verifier / песочницы (`m3.1`)
+  - [x] CI (GitHub Actions): pytest на Linux / macOS / Windows, проверка, что собранный Web UI совпадает с исходниками
+  - [x] Health check перед запуском, `excluded_models`, добор совета; ретраи и `fallbacks`
+  - [x] Семейства моделей (`family`), председатель и судьи из другого семейства
+  - [x] Таблица исходов по моделям (`model_outcomes`), `objection runs reindex`
+  - [x] Разметка итогов: `objection runs label`, 👍/👎 в Web UI, `POST /api/runs/{id}/label`
+  - [x] `objection models add/remove`
 - [ ] **M4 — измеримость**
-  - Eval Harness: baseline при равном бюджете, свой набор задач из Run Store
-  - Model Registry: статистика по моделям пула, корреляция ошибок, n_eff, автовыбор состава
-  - Web UI: страница «Оценки (eval)», метрики на «Обзоре»
+  - [x] Eval Harness: `objection eval run/list/show`, три baseline при равном бюджете, метрики (точность, $, флипы, калибровка, меньшинство, φ, n_eff), наборы `math-mini` / `code-mini` / `mine` / свой `.jsonl`; `auto` избегает проигравших пресетов
+  - [ ] Model Registry: статистика по моделям пула, корреляция ошибок, n_eff, автовыбор состава (`council.selection: auto`), `objection models stats`
+  - [ ] Web UI: страница «Оценки (eval)», метрики на «Обзоре»
 - [ ] **M5 — другие пользователи**
   - HTTP API, многопользовательский Web UI (авторизация), BYO-ключи
   - Публичные результаты eval

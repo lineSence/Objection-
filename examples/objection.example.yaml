@@ -12,6 +12,8 @@ models:
       temperature: 0.3
   - id: claude
     model: anthropic/<your-model>
+    family: anthropic  # семейство (по умолч. выводится из provider/model); судья/председатель — из другого
+    fallbacks: [anthropic/<cheaper-model>]  # запасные модели при временных ошибках (429/5xx/таймаут)
   - id: gemini
     model: gemini/<your-model>
   - id: local-qwen     # локальная модель (опционально)
@@ -41,6 +43,11 @@ defaults:
   timeout_s: 120
   anonymize: true
   max_critique_rounds: 1
+  preflight: true       # быстрая проверка доступности моделей перед запуском; недоступные заменяются из пула
+  health_ttl_s: 300     # кэш результата проверки, сек
+  retries: 2            # повторы при временных ошибках до перехода на fallbacks
+  retry_backoff_s: 1.0
+  respect_eval: true    # роутер учитывает последние отчёты objection eval (docs/eval.md)
 
 verifier:                     # фактчек ответов (docs/verifier.md)
   enabled: true
@@ -50,6 +57,8 @@ verifier:                     # фактчек ответов (docs/verifier.md)
   search_results: 5
   python: true                # python-проверки в песочнице
   max_claims: 5
+  repo: true                  # проверять утверждения о коде по файлам рабочей папки (--workdir)
+  repo_results: 6
   judges: 2
   revise: true                # исправлять ответ, если утверждение опровергнуто
 

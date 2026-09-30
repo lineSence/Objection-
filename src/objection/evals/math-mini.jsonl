@@ -1,0 +1,30 @@
+{"id": "math-01", "question": "A bakery sells muffins for $3 each and cookies for $2 each. On Monday it sold 45 muffins and 60 cookies. How many dollars did it earn on Monday?", "expected": "255"}
+{"id": "math-02", "question": "Tom has 3 boxes with 24 pencils each. He gives away 17 pencils. How many pencils does he have left?", "expected": "55"}
+{"id": "math-03", "question": "A train travels at 80 km per hour for 2.5 hours, then at 60 km per hour for 1.5 hours. How many kilometres does it travel in total?", "expected": "290"}
+{"id": "math-04", "question": "Maria reads 18 pages a day. Her book has 342 pages. How many days does she need to finish it?", "expected": "19"}
+{"id": "math-05", "question": "A shirt costs $40. It is discounted by 25%, and then a $5 coupon is applied. What is the final price in dollars?", "expected": "25"}
+{"id": "math-06", "question": "There are 12 rows of chairs with 15 chairs in each row. 38 chairs are empty. How many chairs are occupied?", "expected": "142"}
+{"id": "math-07", "question": "A farmer has 7 cows, 12 chickens and 3 horses. How many legs do the animals have in total?", "expected": "64"}
+{"id": "math-08", "question": "Anna saves $15 every week. How many weeks does she need to save to buy a bicycle that costs $255?", "expected": "17"}
+{"id": "math-09", "question": "A rectangle has a perimeter of 56 cm and a width of 10 cm. What is its area in square centimetres?", "expected": "180"}
+{"id": "math-10", "question": "A water tank holds 1200 litres. It is 35% full. How many more litres are needed to fill it completely?", "expected": "780"}
+{"id": "math-11", "question": "Jake is 4 times as old as his son. In 20 years he will be twice as old as his son. How old is Jake now?", "expected": "40"}
+{"id": "math-12", "question": "A shop bought 150 notebooks for $1.20 each and sold all of them for $2 each. What was the profit in dollars?", "expected": "120"}
+{"id": "math-13", "question": "Five friends share a restaurant bill of $137 and a tip of $23 equally. How many dollars does each friend pay?", "expected": "32"}
+{"id": "math-14", "question": "A cyclist rides 14 km every weekday and 30 km on each weekend day. How many kilometres does she ride in 3 weeks?", "expected": "390"}
+{"id": "math-15", "question": "A class has 32 students. 3/8 of them are boys. How many girls are in the class?", "expected": "20"}
+{"id": "math-16", "question": "A printer prints 22 pages per minute. How many pages does it print in 1 hour and 15 minutes?", "expected": "1650"}
+{"id": "math-17", "question": "Sam bought 3 kg of apples at $2.40 per kg and 2 kg of pears at $3.10 per kg. He paid with a $20 bill. How much change did he get, in dollars?", "expected": "6.6"}
+{"id": "math-18", "question": "A garden is 18 m long and 12 m wide. A path 1 m wide runs around the outside of the garden. What is the area of the path in square metres?", "expected": "64"}
+{"id": "math-19", "question": "A factory makes 480 toys per day. 5% of them are defective. How many non-defective toys does it make in 6 days?", "expected": "2736"}
+{"id": "math-20", "question": "Lily has twice as many stickers as Ben. Ben has 15 more stickers than Cara. Cara has 20 stickers. How many stickers do the three of them have in total?", "expected": "125"}
+{"id": "math-21", "question": "A movie starts at 7:45 pm and lasts 2 hours and 35 minutes. At what minute past 10 pm does it end? Answer with the number of minutes past 10:00 pm.", "expected": "20"}
+{"id": "math-22", "question": "An online course has 9 modules with 7 lessons each. Mark has completed 40 lessons. How many lessons are left?", "expected": "23"}
+{"id": "math-23", "question": "A car uses 6 litres of fuel per 100 km. Fuel costs $1.50 per litre. How many dollars does a 450 km trip cost?", "expected": "40.5"}
+{"id": "math-24", "question": "A school orders 14 boxes of markers. Each box has 12 markers. The markers are shared equally among 8 classes. How many markers does each class get?", "expected": "21"}
+{"id": "math-25", "question": "The sum of three consecutive integers is 96. What is the largest of them?", "expected": "33"}
+{"id": "math-26", "question": "A phone plan costs $25 per month plus $0.10 per text message. In one month the bill was $41.30. How many text messages were sent?", "expected": "163"}
+{"id": "math-27", "question": "A recipe needs 250 g of flour for 10 pancakes. How many grams of flour are needed for 36 pancakes?", "expected": "900"}
+{"id": "math-28", "question": "A library had 1250 books. It bought 320 new books and removed 175 old ones. Then 20% of the books were lent out. How many books remain in the library?", "expected": "1116"}
+{"id": "math-29", "question": "A worker earns $18 per hour for the first 40 hours of a week and 1.5 times that rate for every extra hour. How much does she earn for a 46-hour week, in dollars?", "expected": "882"}
+{"id": "math-30", "question": "Two pipes fill a pool. The first alone fills it in 6 hours, the second alone in 3 hours. How many hours do they need together?", "expected": "2"}

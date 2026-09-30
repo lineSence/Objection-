@@ -41,6 +41,7 @@ async def route(engine: Engine, run: Run) -> None:
         mode, reason, by = "code", "a tests command was given", "rule"
     else:
         mode, reason, by = await classify(engine, run)
+        mode, reason = respect_eval(engine, run, mode, reason)
     run.mode = mode  # type: ignore[assignment]
     run.route_reason = reason
     engine.emit(run, "route", phase="route", model_id=by if by not in ("rule", "heuristic") else None,
@@ -60,3 +61,27 @@ async def classify(engine: Engine, run: Run) -> tuple[str, str, str]:
             return mode, str(d.get("reason") or "")[:300], spec.id
     mode, reason = heuristic(run.question)
     return mode, f"heuristic: {reason}", "heuristic"
+
+
+# A preset flagged by the latest eval of this council is replaced by the other short-answer preset when that one
+# was not flagged. Open questions keep `deliberate` (no cheaper protocol fits them) but the reason says so.
+_ALTERNATIVE = {"verify": "quick", "quick": "verify"}
+
+
+def respect_eval(engine: Engine, run: Run, mode: str, reason: str) -> tuple[str, str]:
+    if not engine.config.defaults.respect_eval:
+        return mode, reason
+    try:
+        from .eval import latest_verdicts, pool_signature
+
+        verdicts = latest_verdicts(engine.store, pool_signature(engine.config, run.models))
+    except Exception:  # noqa: BLE001 — routing must not fail because of eval bookkeeping
+        return mode, reason
+    v = verdicts.get(mode)
+    if not v or v.get("beats_baselines"):
+        return mode, reason
+    alt = _ALTERNATIVE.get(mode)
+    note = f"eval {v.get('eval_id')}: {mode} did not beat {', '.join(v.get('lost_to') or ['a baseline'])}"
+    if alt and verdicts.get(alt, {}).get("beats_baselines", alt not in verdicts):
+        return alt, f"{reason}; {note} → {alt}"
+    return mode, f"{reason}; warning — {note}"

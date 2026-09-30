@@ -19,6 +19,7 @@ from .voting import normalize
 INSTRUCTIONS = """Objection! is a council of independent LLMs.
 - council_review: before committing or opening a PR, pass the diff (or a plan before implementing it). Branch on
   `verdict`: "fail" -> fix the confirmed findings; "uncertain" -> look at the disputed findings; "pass" -> proceed.
+  Pass workdir=<project root> and check_facts=true to have findings checked against the repository files.
 - council_ask: architecture decisions, choosing between approaches, a second opinion when stuck. mode="auto" (default)
   lets the router pick the cheapest protocol: quick (2 models, escalate on disagreement), verify, deliberate.
 - council_verify: fact-check one claim (an API behaviour, a version, a number) -> confirmed | refuted | unverified.
@@ -57,6 +58,8 @@ def _result(run: Run) -> dict[str, Any]:
         out["routed"] = {"from": run.requested_mode, "reason": run.route_reason}
     if run.budget_exhausted:
         out["budget_exhausted"] = True
+    if run.excluded_models:
+        out["excluded_models"] = run.excluded_models
     if v:
         if v.votes:
             out["votes"] = [{"answer": g["answer"], "models": len(g["models"]), "weight": g["weight"]} for g in v.votes]
@@ -86,7 +89,8 @@ def _result(run: Run) -> dict[str, Any]:
             out["findings"] = [
                 {"id": f.id, "status": f.status, "severity": f.severity, "title": f.title, "location": f.location,
                  "detail": f.detail, "suggestion": f.suggestion, "confirmed_by": len(f.confirmed_by),
-                 "refuted_by": len(f.refuted_by), "objections": [o.reason for o in f.refuted_by]}
+                 "refuted_by": len(f.refuted_by), "objections": [o.reason for o in f.refuted_by],
+                 "evidence": f.evidence}
                 for f in v.findings if f.status != "rejected"
             ]
             out["rejected_findings"] = sum(f.status == "rejected" for f in v.findings)
@@ -128,10 +132,12 @@ def build_server(config: Config | None = None, store: RunStore | None = None) ->
     async def council_ask(question: str, context: str | None = None,
                           mode: Literal["auto", "deliberate", "verify", "quick"] = "auto",
                           models: list[str] | None = None, check_facts: bool | None = None,
+                          workdir: str | None = None,
                           budget_usd: float | None = None, no_cache: bool = False,
                           ctx: Context | None = None) -> dict[str, Any]:
         return await run_with_progress(RunRequest(question=question, context=context, mode=mode, models=models,
-                                                  check_facts=check_facts, budget_usd=budget_usd, no_cache=no_cache), ctx)
+                                                  check_facts=check_facts, workdir=workdir, budget_usd=budget_usd,
+                                                  no_cache=no_cache), ctx)
 
     @server.tool(description=(
         "Fact-check one claim with the council (preset `verify`): independent short answers, weighted vote, critique "
@@ -163,20 +169,25 @@ def build_server(config: Config | None = None, store: RunStore | None = None) ->
 
     @server.tool(description=(
         "Council review of a diff, plan or file (preset `review`): independent reviews, merged findings, anonymous "
-        "cross-check of every finding. Returns verdict pass|fail|uncertain and findings with severity and status."))
+        "cross-check of every finding. Returns verdict pass|fail|uncertain and findings with severity and status. "
+        "With check_facts=true and workdir (the project root) every finding is also checked against the repository "
+        "files / Python / web search: a refuted finding is rejected, a supported one confirmed."))
     async def council_review(target: str, kind: Literal["diff", "plan", "file", "text"] = "diff",
                              instructions: str = "Find real problems: bugs, security, broken logic, missing edge cases.",
                              context: str | None = None,
                              fail_on: Literal["critical", "high", "medium", "low", "info"] = "high",
-                             models: list[str] | None = None, budget_usd: float | None = None,
+                             models: list[str] | None = None, check_facts: bool | None = None,
+                             workdir: str | None = None, budget_usd: float | None = None,
                              no_cache: bool = False, ctx: Context | None = None) -> dict[str, Any]:
         return await run_with_progress(RunRequest(question=instructions, context=context, mode="review", target=target,
                                                   target_kind=kind, fail_on=fail_on, models=models,
+                                                  check_facts=check_facts, workdir=workdir,
                                                   budget_usd=budget_usd, no_cache=no_cache), ctx)
 
     @server.tool(description="List the model pool; with check=true also health-check every enabled model.")
     async def council_models(check: bool = False) -> dict[str, Any]:
-        models = [{"id": m.id, "model": m.model, "local": m.is_local, "enabled": m.enabled} for m in config.models]
+        models = [{"id": m.id, "model": m.model, "family": m.family_name, "local": m.is_local, "enabled": m.enabled}
+                  for m in config.models]
         if check:
             enabled = config.enabled_models
             results = await asyncio.gather(*(health_check(m) for m in enabled))

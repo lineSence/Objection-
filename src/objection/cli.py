@@ -18,8 +18,10 @@ from .store import RunStore
 app = typer.Typer(help="Objection! — a council of LLMs.", no_args_is_help=True)
 models_app = typer.Typer(help="The model pool (defined by you in the config).")
 runs_app = typer.Typer(help="Run history.")
+eval_app = typer.Typer(help="Eval Harness: the council vs baselines at equal budget, on your pool.")
 app.add_typer(models_app, name="models")
 app.add_typer(runs_app, name="runs")
+app.add_typer(eval_app, name="eval")
 
 
 @app.command()
@@ -33,6 +35,7 @@ def ask(
     no_cache: bool = typer.Option(False, "--no-cache", help="Ignore cached identical runs."),
     mode: str | None = typer.Option(None, "--mode", help="auto | deliberate | verify | quick (default: config, auto)."),
     check: bool | None = typer.Option(None, "--check/--no-check", help="Fact-check claims (default: config)."),
+    workdir: str | None = typer.Option(None, "--workdir", "-w", help="Project whose files may serve as evidence."),
 ) -> None:
     """Ask the council. `auto` routes to the cheapest fitting protocol."""
     if question == "-":
@@ -44,10 +47,14 @@ def ask(
         raise typer.Exit(3)
     req = RunRequest(
         question=question, context=context, source=source, budget_usd=budget, no_cache=no_cache, mode=mode,
-        check_facts=check,
+        check_facts=check, workdir=_abs(workdir),
         models=[m.strip() for m in models.split(",")] if models else None,
     )
-    run = asyncio.run(engine.ask(req))
+    try:
+        run = asyncio.run(engine.ask(req))
+    except (KeyError, ValueError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(3)
     if as_json:
         typer.echo(run.model_dump_json(indent=2))
     elif run.status != "done" or not run.verdict:
@@ -65,6 +72,12 @@ def ask(
             typer.echo(f"Особое мнение: {v.minority_report}")
         typer.echo(f"\nrun {run.id} · ${run.cost_usd:.4f} · {run.latency_s} с{' · из кэша' if run.cached else ''}")
     raise typer.Exit(0 if run.status == "done" else 1)
+
+
+def _abs(path: str | None) -> str | None:
+    from pathlib import Path
+
+    return str(Path(path).resolve()) if path else None
 
 
 def _mode_line(run) -> str:
@@ -121,6 +134,10 @@ def review(
     budget: float | None = typer.Option(None, "--budget"),
     fmt: str = typer.Option("text", "--format", "-f", help="text | json"),
     no_cache: bool = typer.Option(False, "--no-cache"),
+    check: bool | None = typer.Option(None, "--check/--no-check",
+                                      help="Fact-check findings against the repository / Python / web (default: config)."),
+    workdir: str | None = typer.Option(None, "--workdir", "-w",
+                                       help="Repository used as evidence (default: current directory for git/files)."),
 ) -> None:
     """Council review. Exit code: 0 pass, 1 fail, 2 uncertain, 3 error."""
     import subprocess
@@ -152,7 +169,9 @@ def review(
     try:
         run = asyncio.run(engine.ask(RunRequest(
             question=instructions, mode="review", target=target, target_kind=kind, fail_on=fail_on, source="cli",
-            budget_usd=budget, no_cache=no_cache, models=[m.strip() for m in models.split(",")] if models else None)))
+            budget_usd=budget, no_cache=no_cache, check_facts=check,
+            workdir=_abs(workdir) or (None if path == "-" else _abs(".")),
+            models=[m.strip() for m in models.split(",")] if models else None)))
     except (KeyError, ValueError) as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(3)
@@ -168,12 +187,14 @@ def review(
             if f.status == "rejected":
                 continue
             loc = f" ({f.location})" if f.location else ""
-            typer.echo(f"  [{f.severity}] [{f.status} {len(f.confirmed_by)}+/{len(f.refuted_by)}-] {f.title}{loc}")
+            ev = {"supported": " ✓fact", "refuted": " ✗fact", "unverified": " ?fact"}.get(f.evidence or "", "")
+            typer.echo(f"  [{f.severity}] [{f.status} {len(f.confirmed_by)}+/{len(f.refuted_by)}-{ev}] {f.title}{loc}")
             if f.suggestion:
                 typer.echo(f"      → {f.suggestion}")
         rejected = sum(f.status == "rejected" for f in v.findings)
         if rejected:
-            typer.echo(f"  … {rejected} finding(s) rejected by cross-check")
+            typer.echo(f"  … {rejected} finding(s) rejected by cross-check or evidence")
+        _print_claims(v)
         typer.echo(f"\nrun {run.id} · ${run.cost_usd:.4f} · {run.latency_s} с{' · cached' if run.cached else ''}")
     if run.status != "done" or not run.verdict:
         raise typer.Exit(3)
@@ -296,7 +317,58 @@ def models_list() -> None:
     """Show the model pool."""
     for m in load_config().models:
         flags = " ".join(f for f, on in (("local", m.is_local), ("disabled", not m.enabled)) if on)
-        typer.echo(f"{m.id:<16} {m.model:<40} {flags}")
+        typer.echo(f"{m.id:<16} {m.model:<40} {m.family_name:<10} {flags}")
+
+
+@models_app.command("add")
+def models_add(
+    model_id: str = typer.Argument(..., help="Short id used in the council, e.g. gpt."),
+    model: str = typer.Argument(..., help="LiteLLM model string, e.g. openai/gpt-4o-mini or ollama/qwen2.5."),
+    api_base: str | None = typer.Option(None, "--api-base"),
+    api_key_env: str | None = typer.Option(None, "--api-key-env", help="Env var holding this model's key."),
+    family: str | None = typer.Option(None, "--family", help="Model family (default: inferred from the name)."),
+    weight: float = typer.Option(1.0, "--weight"),
+    fallback: list[str] = typer.Option([], "--fallback", help="LiteLLM model string to try when this one fails."),
+    disabled: bool = typer.Option(False, "--disabled"),
+    replace: bool = typer.Option(False, "--replace", help="Overwrite an existing model with this id."),
+) -> None:
+    """Add a model to the pool (written to the config file)."""
+    from .config import ModelSpec, config_path, save_config
+
+    config = load_config()
+    try:
+        spec = ModelSpec(id=model_id, model=model, api_base=api_base, api_key_env=api_key_env, family=family,
+                         weight=weight, fallbacks=list(fallback), enabled=not disabled)
+    except ValueError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(3)
+    exists = [m for m in config.models if m.id == model_id]
+    if exists and not replace:
+        typer.secho(f"model '{model_id}' already exists (use --replace)", fg="red", err=True)
+        raise typer.Exit(1)
+    if not config_path().exists():  # the implicit mock pool is not something the user chose
+        config.models = [m for m in config.models if not m.model.startswith("mock/")]
+    config.models = [m for m in config.models if m.id != model_id] + [spec]
+    path = save_config(config)
+    typer.echo(f"added {model_id} → {model} (family {spec.family_name}) in {path}")
+
+
+@models_app.command("remove")
+def models_remove(model_ids: list[str] = typer.Argument(...)) -> None:
+    """Remove models from the pool. Their history (runs, statistics) is kept."""
+    from .config import save_config
+
+    config = load_config()
+    missing = [i for i in model_ids if not any(m.id == i for m in config.models)]
+    for i in missing:
+        typer.secho(f"not in the pool: {i}", fg="red", err=True)
+    config.models = [m for m in config.models if m.id not in model_ids]
+    config.defaults.council.pinned = [i for i in config.defaults.council.pinned if i not in model_ids]
+    if config.defaults.judge in model_ids:
+        config.defaults.judge = "auto"
+    path = save_config(config)
+    typer.echo(f"pool: {', '.join(m.id for m in config.models) or '(empty)'} → {path}")
+    raise typer.Exit(1 if missing else 0)
 
 
 @models_app.command("check")
@@ -319,7 +391,8 @@ def models_check() -> None:
 def runs_list(limit: int = 20) -> None:
     config = load_config()
     for r in RunStore(config.storage.resolved).list_runs(limit):
-        typer.echo(f"{r.id}  {r.status:<8} {r.source:<9} ${r.cost_usd:.4f}  {r.question[:60]}")
+        mark = {"correct": "✓", "wrong": "✗"}.get(r.label or "", " ")
+        typer.echo(f"{r.id} {mark} {r.status:<8} {r.mode:<10} {r.source:<9} ${r.cost_usd:.4f}  {r.question[:60]}")
 
 
 @runs_app.command("delete")
@@ -330,6 +403,36 @@ def runs_delete(run_ids: list[str] = typer.Argument(..., help="Run ids to delete
     for r in missing:
         typer.secho(f"not found: {r}", fg="red", err=True)
     raise typer.Exit(1 if missing else 0)
+
+
+@runs_app.command("label")
+def runs_label(
+    run_id: str = typer.Argument(...),
+    label: str = typer.Argument(..., help="correct | wrong | clear"),
+    expected: str | None = typer.Option(None, "--expected", "-e", help="The correct answer (grades every model)."),
+    note: str | None = typer.Option(None, "--note"),
+) -> None:
+    """Label the final answer of a run. Labelled runs form your own eval set (`objection eval run --suite mine`)."""
+    from .labels import set_label
+
+    config = load_config()
+    store = RunStore(config.storage.resolved)
+    try:
+        run = set_label(store, run_id, None if label == "clear" else label, expected=expected, note=note, config=config)
+    except (KeyError, ValueError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{run.id}: {run.label or 'unlabelled'}" + (f" (expected: {run.expected})" if run.expected else ""))
+
+
+@runs_app.command("reindex")
+def runs_reindex() -> None:
+    """Rebuild per-model outcome statistics from the stored runs and events."""
+    from .outcomes import reindex
+
+    config = load_config()
+    n = reindex(RunStore(config.storage.resolved), config)
+    typer.echo(f"reindexed {n} finished run(s)")
 
 
 @app.command("sandbox")
@@ -353,6 +456,77 @@ def runs_show(run_id: str) -> None:
     if not run:
         raise typer.Exit(1)
     typer.echo(json.dumps(run.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@eval_app.command("run")
+def eval_run(
+    suite: str = typer.Option("math-mini", "--suite", "-s", help="math-mini | code-mini | mine | path to .jsonl"),
+    n: int | None = typer.Option(None, "--n", help="Use only the first N tasks."),
+    presets: str | None = typer.Option(None, "--presets", "-p",
+                                       help="Comma-separated presets (default: verify,quick; code for coding suites)."),
+    models: str | None = typer.Option(None, "--models", "-m", help="Council to evaluate (default: config)."),
+    check: bool = typer.Option(False, "--check/--no-check", help="Fact-check inside the presets (costs more)."),
+    budget: float | None = typer.Option(None, "--budget", help="Budget per run in USD."),
+    parallel: int = typer.Option(2, "--parallel", help="Concurrent runs."),
+    sc_temperature: float = typer.Option(0.7, "--sc-temperature", help="Sampling temperature for self-consistency."),
+    fmt: str = typer.Option("text", "--format", "-f", help="text | md | json"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Also write the report to this file."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask before spending money."),
+) -> None:
+    """Run an eval. Exit code: 0 every preset beats its baselines, 1 some preset does not, 3 error."""
+    from .eval import ANSWER_PRESETS, Harness, load_suite, to_markdown
+
+    config = load_config()
+    store = RunStore(config.storage.resolved)
+    try:
+        tasks = load_suite(suite, store, n)
+        ps = [p.strip() for p in presets.split(",")] if presets else None
+        bad = [p for p in ps or [] if p not in (*ANSWER_PRESETS, "code")]
+        if bad:
+            raise ValueError(f"unknown preset(s): {', '.join(bad)}")
+        h = Harness(config, store, presets=ps, models=[m.strip() for m in models.split(",")] if models else None,
+                    check_facts=check, budget_usd=budget, parallel=parallel, sc_temperature=sc_temperature,
+                    progress=(lambda s: typer.echo(s, err=True)) if fmt != "json" else None)
+    except (KeyError, ValueError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(3)
+    paid = [m for m in h.council if not (config.model(m).model.startswith("mock/") or config.model(m).is_local)]
+    if paid and not yes:
+        typer.confirm(f"{len(tasks)} tasks × ({len(ps or [1, 2])} presets + {len(h.council)} single models + "
+                      f"self-consistency samples) on paid models ({', '.join(paid)}). Continue?", abort=True)
+    rep = asyncio.run(h.run(tasks, suite))
+    text = json.dumps(rep, ensure_ascii=False, indent=2) if fmt == "json" else to_markdown(rep)
+    typer.echo(text)
+    if out:
+        from pathlib import Path
+
+        Path(out).write_text(text, encoding="utf-8")
+    if rep.get("status") != "done":
+        raise typer.Exit(3)
+    raise typer.Exit(0 if all(v["beats_baselines"] for v in rep["verdicts"].values()) else 1)
+
+
+@eval_app.command("list")
+def eval_list(limit: int = 20) -> None:
+    """Past evals, newest first."""
+    config = load_config()
+    for body in RunStore(config.storage.resolved).list_evals(limit):
+        r = json.loads(body)
+        verdicts = " ".join(f"{p}{'✓' if v['beats_baselines'] else '✗'}" for p, v in (r.get("verdicts") or {}).items())
+        typer.echo(f"{r['id']}  {r['created_at'][:16]}  {r['status']:<8} {r['suite']:<12} {r.get('tasks', 0):>3} tasks  "
+                   f"{','.join(r.get('council') or [])}  {verdicts}")
+
+
+@eval_app.command("show")
+def eval_show(eval_id: str, fmt: str = typer.Option("md", "--format", "-f", help="md | json")) -> None:
+    from .eval import to_markdown
+
+    config = load_config()
+    body = RunStore(config.storage.resolved).get_eval(eval_id)
+    if body is None:
+        typer.secho(f"not found: {eval_id}", fg="red", err=True)
+        raise typer.Exit(1)
+    typer.echo(body if fmt == "json" else to_markdown(json.loads(body)))
 
 
 @app.command()

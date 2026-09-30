@@ -34,6 +34,12 @@ class DeleteRuns(BaseModel):
     ids: list[str]
 
 
+class LabelBody(BaseModel):
+    label: str | None = None  # correct | wrong | None (clear)
+    expected: str | None = None
+    note: str | None = None
+
+
 def create_app(config: Config | None = None, store: RunStore | None = None) -> FastAPI:
     config = config or load_config()
     store = store or RunStore(config.storage.resolved)
@@ -77,8 +83,8 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
         ]
 
     @app.get("/api/runs")
-    def list_runs(limit: int = 50) -> list[Run]:
-        return store.list_runs(limit)
+    def list_runs(limit: int = 50, include_eval: bool = False) -> list[Run]:
+        return store.list_runs(limit, include_eval=include_eval)
 
     @app.post("/api/runs", status_code=201)
     async def create_run(req: RunRequest) -> Run:
@@ -95,7 +101,7 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
 
     @app.get("/api/stats")
     def stats(days: int = 7) -> dict:
-        return compute_stats(store.list_runs(5000), days)
+        return compute_stats(store.list_runs(5000, include_eval=False), days)
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> Run:
@@ -118,6 +124,32 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
     def delete_runs(body: DeleteRuns) -> dict:
         deleted = [i for i in body.ids if i not in running and store.delete_run(i)]
         return {"deleted": deleted, "skipped": [i for i in body.ids if i not in deleted]}
+
+    @app.post("/api/runs/{run_id}/label")
+    def label_run(run_id: str, body: LabelBody) -> Run:
+        from .labels import set_label
+
+        try:
+            return set_label(store, run_id, body.label, expected=body.expected, note=body.note, config=config)
+        except KeyError:
+            raise HTTPException(404, "run not found")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/outcomes")
+    def outcomes(model_id: str | None = None, mode: str | None = None, run_id: str | None = None) -> list[dict]:
+        return store.outcomes(model_id=model_id, mode=mode, run_id=run_id)
+
+    @app.get("/api/evals")
+    def list_evals(limit: int = 50) -> list[dict]:
+        return [json.loads(b) for b in store.list_evals(limit)]
+
+    @app.get("/api/evals/{eval_id}")
+    def get_eval(eval_id: str) -> dict:
+        body = store.get_eval(eval_id)
+        if body is None:
+            raise HTTPException(404, "eval not found")
+        return json.loads(body)
 
     @app.get("/api/runs/{run_id}/events")
     def get_events(run_id: str, after: int = 0) -> list[Event]:
@@ -204,6 +236,8 @@ def compute_stats(runs: list[Run], days: int) -> dict:
         "budget_exhausted": sum(1 for r in recent if r.budget_exhausted),
         "claims": count(c.status for r in recent if r.verdict for c in r.verdict.claims),
         "revised": sum(1 for r in recent if r.verdict and (r.verdict.revised or r.verdict.fact_override)),
+        "labels": count(r.label for r in recent if r.label),
+        "excluded_models": count(e["id"] for r in recent for e in r.excluded_models),
         "cost_by_day": [{"date": d, "cost_usd": round(c, 6)} for d, c in by_day.items()],
     }
 
