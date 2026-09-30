@@ -429,6 +429,7 @@ function VerifierSection({ s, onSave }: { s: S; onSave: (v: VerifierSettings) =>
       <div className="grid4">
         <label className="check"><input type="checkbox" checked={v.web_search} onChange={(e) => set({ web_search: e.target.checked })} /> Веб-поиск</label>
         <label className="check"><input type="checkbox" checked={v.python} onChange={(e) => set({ python: e.target.checked })} /> Python-проверки</label>
+        <label className="check" title="Если у запуска есть рабочая папка (workdir), утверждения о коде проекта проверяются по его файлам"><input type="checkbox" checked={v.repo ?? true} onChange={(e) => set({ repo: e.target.checked })} /> Файлы репозитория</label>
         <label className="check"><input type="checkbox" checked={v.revise} onChange={(e) => set({ revise: e.target.checked })} /> Исправлять ответ</label>
       </div>
       <div className="grid4">

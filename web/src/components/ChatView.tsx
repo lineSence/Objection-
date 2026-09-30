@@ -152,7 +152,7 @@ export default function ChatView(props: { run: Run; state: RunState; pool: PoolM
               {(v.findings ?? []).map((f) => <FindingCard key={f.id} run={run} f={f} />)}
             </>
           )}
-          {!review && !code && <ClaimsBlock run={run} state={state} />}
+          {!code && <ClaimsBlock run={run} state={state} />}
           {v && !review && !code && <FactNotes v={v} />}
           {v && voting && <VoteFinal run={run} v={v} />}
           {v && code && <SolutionFinal run={run} v={v} />}
