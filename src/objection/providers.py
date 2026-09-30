@@ -36,6 +36,34 @@ def _limit(spec: ModelSpec) -> asyncio.Semaphore | None:
     return _semaphores[key]
 
 
+EST_OUTPUT_TOKENS = 800
+
+
+def _price(spec: ModelSpec, input_tokens: int, output_tokens: int) -> float | None:
+    """Explicit per-model pricing (USD per 1M tokens) wins over LiteLLM's price list."""
+    if spec.price_in is None and spec.price_out is None:
+        return None
+    return (input_tokens * (spec.price_in or 0.0) + output_tokens * (spec.price_out or 0.0)) / 1_000_000
+
+
+def estimate_cost(spec: ModelSpec, prompt: str, output_tokens: int = EST_OUTPUT_TOKENS) -> float:
+    """Rough pre-call estimate: ~3.5 chars per input token + a fixed output allowance. Unknown pricing → 0."""
+    in_tok = int(len(prompt) / 3.5) + 20
+    out_tok = int((spec.params or {}).get("max_tokens") or output_tokens)
+    explicit = _price(spec, in_tok, out_tok)
+    if explicit is not None:
+        return explicit
+    if spec.model.startswith("mock/") or spec.is_local:
+        return 0.0
+    try:
+        import litellm
+
+        p, c = litellm.cost_per_token(model=spec.model, prompt_tokens=in_tok, completion_tokens=out_tok)
+        return float(p + c)
+    except Exception:  # noqa: BLE001 — unknown model: cannot estimate, treat as free
+        return 0.0
+
+
 async def complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, json_mode: bool = False) -> Completion:
     sem = _limit(spec)
     if sem is None:
@@ -73,15 +101,19 @@ async def _complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, 
         raise ProviderError(f"{spec.id}: {type(exc).__name__}: {msg}") from exc
     text = resp.choices[0].message.content or ""
     usage = getattr(resp, "usage", None)
-    try:
-        cost = float(litellm.completion_cost(completion_response=resp) or 0.0)
-    except Exception:  # noqa: BLE001 — unknown pricing (e.g. local models) counts as free
-        cost = 0.0
+    in_tok = getattr(usage, "prompt_tokens", 0) or 0
+    out_tok = getattr(usage, "completion_tokens", 0) or 0
+    cost = _price(spec, in_tok, out_tok)
+    if cost is None:
+        try:
+            cost = float(litellm.completion_cost(completion_response=resp) or 0.0)
+        except Exception:  # noqa: BLE001 — unknown pricing (e.g. local models) counts as free
+            cost = 0.0
     return Completion(
         text=text,
         usage=Usage(
-            input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-            output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
             cost_usd=cost,
             latency_s=round(time.perf_counter() - started, 3),
         ),
@@ -102,7 +134,9 @@ async def _mock(spec: ModelSpec, messages: list[dict]) -> Completion:
     role = system.split("\n", 1)[0].removeprefix("ROLE: ").strip() if system.startswith("ROLE:") else "plain"
     h = int(hashlib.sha256((spec.id + prompt).encode()).hexdigest(), 16)
     text = _MOCK_ROLES.get(role, _mock_plain)(spec.id, prompt, h)
-    return Completion(text=text, usage=Usage(input_tokens=len(prompt) // 4, output_tokens=len(text) // 4, latency_s=0.05))
+    in_tok, out_tok = len(prompt) // 4, len(text) // 4
+    return Completion(text=text, usage=Usage(input_tokens=in_tok, output_tokens=out_tok,
+                                             cost_usd=_price(spec, in_tok, out_tok) or 0.0, latency_s=0.05))
 
 
 def _mock_plain(model_id: str, prompt: str, h: int) -> str:
@@ -158,7 +192,61 @@ def _mock_crosscheck(model_id: str, prompt: str, h: int) -> str:
     return json.dumps({"votes": votes})
 
 
+def _mock_router(model_id: str, prompt: str, h: int) -> str:
+    from .router import heuristic
+
+    task = prompt.split("TASK:", 1)[-1].split("\n\nReturn JSON", 1)[0].strip()
+    mode, reason = heuristic(task)
+    return json.dumps({"mode": mode, "reason": f"mock router: {reason}"})
+
+
+def _mock_verifier(model_id: str, prompt: str, h: int) -> str:
+    """Short canonical answers. Claims: mostly "true"; a question containing "спорн"/"disputed" splits the council."""
+    q = prompt.lower()
+    split = "спорн" in q or "disputed" in q
+    if "true, false or unknown" in q or "claim:" in q:
+        answer = ("false" if h % 2 else "true") if split else "true"
+    elif any(w in q for w in ("сколько", "how many", "how much")):
+        answer = ("42" if h % 3 else "41") if split else "42"
+    else:
+        answer = ("Вариант A" if h % 2 else "Вариант B") if split else "Вариант A"
+    return json.dumps({"answer": answer, "reasoning": f"{model_id}: краткое обоснование (mock).",
+                       "confidence": 0.9 if not split else 0.6}, ensure_ascii=False)
+
+
+def _mock_verify_critic(model_id: str, prompt: str, h: int) -> str:
+    own = prompt.split("YOUR_ANSWER:", 1)[1].split("\n", 2)[1].strip() if "YOUR_ANSWER:" in prompt else ""
+    majority = "true" if "claim:" in prompt.lower() else "42" if "42" in prompt else "Вариант A"
+    changed = own != majority and h % 2 == 0
+    return json.dumps({"answer": majority if changed else own, "changed": changed,
+                       "reason": "контрпример из ответа [1] опровергает мой довод" if changed else None,
+                       "objections": [{"target": 1, "text": f"{model_id}: обоснование не проверяет граничный случай"}]},
+                      ensure_ascii=False)
+
+
+def _mock_coder(model_id: str, prompt: str, h: int) -> str:
+    """Writes `add(a, b)`-style functions; half of the first-round candidates are buggy, fixes are correct."""
+    import re
+
+    fix = "TEST_OUTPUT:" in prompt
+    m = re.search(r"SOLUTION_PATH:\s*(\S+)", prompt)
+    filename = m.group(1) if m and m.group(1) != "-" else "solution.py"
+    fn = re.search(r"\b([a-z_]\w*)\(\s*a\s*,\s*b\s*\)", prompt.split("TASK:", 1)[-1])
+    name = fn.group(1) if fn else "add"
+    buggy = not fix and h % 2 == 1
+    body = "return a - b  # oops" if buggy else "return a + b"
+    code = f'def {name}(a, b):\n    """Mock solution by {model_id}."""\n    {body}\n'
+    return json.dumps({"filename": filename, "code": code,
+                       "explanation": "исправлено по логам тестов" if fix else "простое решение"}, ensure_ascii=False)
+
+
+def _mock_code_judge(model_id: str, prompt: str, h: int) -> str:
+    return json.dumps({"best": 1, "reason": "самое простое и читаемое решение (mock)"}, ensure_ascii=False)
+
+
 _MOCK_ROLES = {
+    "router": _mock_router, "verifier": _mock_verifier, "verify-critic": _mock_verify_critic,
+    "coder": _mock_coder, "code-judge": _mock_code_judge,
     "council-member": _mock_plain, "critic": _mock_critic, "chair": _mock_chair, "reviewer": _mock_reviewer,
     "review-dedupe": _mock_dedupe, "review-crosscheck": _mock_crosscheck,
 }

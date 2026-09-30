@@ -14,6 +14,8 @@ EventType = Literal[
     "answer",
     "model_error",
     "critique",
+    "route",
+    "test_result",
     "phase_finished",
     "verdict",
     "run_finished",
@@ -25,7 +27,8 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-Mode = Literal["deliberate", "review"]
+Mode = Literal["auto", "deliberate", "review", "verify", "quick", "code"]
+RESOLVED_MODES = ("deliberate", "review", "verify", "quick", "code")
 Severity = Literal["critical", "high", "medium", "low", "info"]
 SEVERITY_ORDER: dict[str, int] = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 TargetKind = Literal["diff", "plan", "file", "text"]
@@ -34,7 +37,7 @@ TargetKind = Literal["diff", "plan", "file", "text"]
 class RunRequest(BaseModel):
     question: str = Field(min_length=1)  # for review: what to focus on (may be a generic instruction)
     context: str | None = None
-    mode: Mode = "deliberate"
+    mode: Mode | None = None  # None → config defaults.mode (default "auto": the router picks)
     target: str | None = None  # review: the diff / plan / file content
     target_kind: TargetKind = "diff"
     fail_on: Severity = "high"  # review: minimal confirmed severity that fails the verdict
@@ -42,6 +45,10 @@ class RunRequest(BaseModel):
     budget_usd: float | None = None
     source: str = "web"  # web | cli | opencode | cline | mcp
     no_cache: bool = False
+    # code mode
+    tests_cmd: str | None = None  # shell command that must pass, e.g. "pytest -q"
+    workdir: str | None = None  # project directory copied into a temp dir for every candidate
+    solution_path: str | None = None  # file the solution is written to, relative to workdir
 
 
 class Usage(BaseModel):
@@ -89,13 +96,22 @@ class Verdict(BaseModel):
     disputed: list[dict[str, Any]] = Field(default_factory=list)
     minority_report: str | None = None
     assumptions: list[str] = Field(default_factory=list)
+    # M2
+    votes: list[dict[str, Any]] = Field(default_factory=list)  # [{answer, models, weight}] — verify / quick
+    stopped_early: bool = False  # unanimous first round: critique skipped
+    escalated_to: str | None = None  # quick → verify/deliberate when the two models disagreed
+    solution: dict[str, Any] | None = None  # code: {model_id, filename, code, passed, output}
+    candidates: list[dict[str, Any]] = Field(default_factory=list)  # code: every candidate with its test result
+    saved_usd_est: float = 0.0  # estimated cost avoided by early stop / quick path
 
 
 class Run(BaseModel):
     id: str
     question: str
     context: str | None = None
-    mode: Mode
+    mode: Mode  # resolved mode after routing ("auto" only until the router ran)
+    requested_mode: Mode = "deliberate"
+    route_reason: str | None = None
     source: str
     target: str | None = None
     target_kind: TargetKind = "diff"
@@ -105,6 +121,10 @@ class Run(BaseModel):
     models: list[str] = Field(default_factory=list)
     budget_usd: float
     cost_usd: float = 0.0
+    budget_exhausted: bool = False  # some calls were skipped to stay within budget_usd
+    tests_cmd: str | None = None
+    workdir: str | None = None
+    solution_path: str | None = None
     latency_s: float | None = None
     verdict: Verdict | None = None
     error: str | None = None

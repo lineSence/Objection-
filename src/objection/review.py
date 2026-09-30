@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import time
 from typing import Any
 
@@ -41,7 +42,11 @@ async def run_review(engine: Engine, run: Run) -> Verdict:
         v = _verdict(run, findings, active, note=str(exc))
         v.verdict = "uncertain"
         return v
-    return _verdict(run, findings, active)
+    v = _verdict(run, findings, active)
+    if run.budget_exhausted and v.verdict == "pass":  # some cross-checks were skipped: never a silent pass
+        v.verdict = "uncertain"
+        v.answer += " Note: budget exhausted, some cross-checks were skipped."
+    return v
 
 
 async def independent(engine: Engine, run: Run, target: str) -> dict[str, list[dict[str, Any]]]:
@@ -130,11 +135,13 @@ async def crosscheck(engine: Engine, run: Run, target: str, findings: list[Findi
     started = time.perf_counter()
     groups = [{"id": f.id, "title": f.title, "severity": f.severity, "location": f.location, "detail": f.detail}
               for f in findings]
-    user = prompts.CROSSCHECK_TEMPLATE.format(kind=run.target_kind, target=target,
-                                              groups=json.dumps(groups, ensure_ascii=False, indent=1))
     by_id = {f.id: f for f in findings}
 
     async def one(model_id: str) -> None:
+        order = groups[:]
+        random.shuffle(order)  # per-reviewer order: no position bias shared by the whole council
+        user = prompts.CROSSCHECK_TEMPLATE.format(kind=run.target_kind, target=target,
+                                                  groups=json.dumps(order, ensure_ascii=False, indent=1))
         c = await engine.call(run, engine.config.model(model_id), prompts.CROSSCHECK, user, phase=phase, json_mode=True)
         if c is None:
             return

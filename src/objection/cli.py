@@ -31,14 +31,18 @@ def ask(
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     source: str = typer.Option("cli", "--source", help="Run source label (cli, opencode, cline…)."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Ignore cached identical runs."),
+    mode: str | None = typer.Option(None, "--mode", help="auto | deliberate | verify | quick (default: config, auto)."),
 ) -> None:
-    """Ask the council (preset `deliberate`)."""
+    """Ask the council. `auto` routes to the cheapest fitting protocol."""
     if question == "-":
         question = sys.stdin.read()
     config = load_config()
     engine = Engine(config, RunStore(config.storage.resolved))
+    if mode and mode not in ("auto", "deliberate", "verify", "quick"):
+        typer.secho("--mode must be auto, deliberate, verify or quick", fg="red", err=True)
+        raise typer.Exit(3)
     req = RunRequest(
-        question=question, context=context, source=source, budget_usd=budget, no_cache=no_cache,
+        question=question, context=context, source=source, budget_usd=budget, no_cache=no_cache, mode=mode,
         models=[m.strip() for m in models.split(",")] if models else None,
     )
     run = asyncio.run(engine.ask(req))
@@ -48,8 +52,9 @@ def ask(
         typer.secho(f"Run {run.id} failed: {run.error}", fg="red", err=True)
     else:
         v = run.verdict
-        typer.secho("Objection! — итог совета", bold=True)
+        typer.secho(f"Objection! — итог совета ({_mode_line(run)})", bold=True)
         typer.echo(v.answer)
+        _print_votes(v)
         if v.agreement or v.confidence is not None:
             typer.echo(f"\nСогласие: {v.agreement or '—'} · уверенность: {v.confidence if v.confidence is not None else '—'}")
         for d in v.disputed:
@@ -58,6 +63,23 @@ def ask(
             typer.echo(f"Особое мнение: {v.minority_report}")
         typer.echo(f"\nrun {run.id} · ${run.cost_usd:.4f} · {run.latency_s} с{' · из кэша' if run.cached else ''}")
     raise typer.Exit(0 if run.status == "done" else 1)
+
+
+def _mode_line(run) -> str:
+    s = run.mode + (f" ← auto: {run.route_reason}" if run.requested_mode == "auto" and run.route_reason else "")
+    v = run.verdict
+    if v and v.stopped_early:
+        s += f" · ранняя остановка, сэкономлено ≈${v.saved_usd_est:.4f}"
+    if v and v.escalated_to:
+        s += f" · эскалация → {v.escalated_to}"
+    if run.budget_exhausted:
+        s += " · бюджет исчерпан"
+    return s
+
+
+def _print_votes(v) -> None:
+    for g in v.votes:
+        typer.echo(f"  {g['weight']:>5.2f}  {g['answer'][:60]:<60}  {', '.join(g['models'])}")
 
 
 SEVERITIES = ["critical", "high", "medium", "low", "info"]
@@ -134,6 +156,108 @@ def review(
     if run.status != "done" or not run.verdict:
         raise typer.Exit(3)
     raise typer.Exit(EXIT[run.verdict.verdict or "uncertain"])
+
+
+@app.command()
+def verify(
+    claim: str = typer.Argument(..., help="Claim to fact-check; '-' reads stdin."),
+    context: str | None = typer.Option(None, "--context", "-c"),
+    models: str | None = typer.Option(None, "--models", "-m"),
+    budget: float | None = typer.Option(None, "--budget"),
+    as_json: bool = typer.Option(False, "--json"),
+    no_cache: bool = typer.Option(False, "--no-cache"),
+) -> None:
+    """Fact-check a claim (preset `verify`). Exit code: 0 confirmed, 1 refuted, 2 unverified, 3 error."""
+    from .voting import normalize
+
+    if claim == "-":
+        claim = sys.stdin.read().strip()
+    config = load_config()
+    engine = Engine(config, RunStore(config.storage.resolved))
+    q = f"Claim: {claim}\nIs this claim true? Answer exactly true, false or unknown."
+    try:
+        run = asyncio.run(engine.ask(RunRequest(question=q, context=context, mode="verify", source="cli",
+                                                budget_usd=budget, no_cache=no_cache,
+                                                models=[m.strip() for m in models.split(",")] if models else None)))
+    except (KeyError, ValueError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(3)
+    if run.status != "done" or not run.verdict:
+        typer.secho(f"Run {run.id} failed: {run.error}", fg="red", err=True)
+        raise typer.Exit(3)
+    v = run.verdict
+    key = normalize(v.votes[0]["answer"]) if v.votes else "unknown"
+    status = {"true": "confirmed", "false": "refuted"}.get(key, "unverified") if v.verdict != "uncertain" else "unverified"
+    if as_json:
+        typer.echo(json.dumps({"status": status, **run.model_dump(mode="json")}, ensure_ascii=False, indent=2))
+    else:
+        color = {"confirmed": "green", "refuted": "red", "unverified": "yellow"}[status]
+        typer.secho(f"Objection! verify: {status}  ({v.agreement}, {_mode_line(run)})", fg=color, bold=True)
+        _print_votes(v)
+        if v.votes and v.votes[0].get("reasoning"):
+            typer.echo(f"\n{v.votes[0]['reasoning']}")
+        if v.minority_report:
+            typer.echo(f"Особое мнение: {v.minority_report}")
+        typer.echo(f"\nrun {run.id} · ${run.cost_usd:.4f} · {run.latency_s} с{' · cached' if run.cached else ''}")
+    raise typer.Exit({"confirmed": 0, "refuted": 1, "unverified": 2}[status])
+
+
+@app.command()
+def solve(
+    task: str = typer.Argument(..., help="Coding task; '-' reads stdin."),
+    tests: str | None = typer.Option(None, "--tests", "-t", help="Command that must pass, e.g. 'pytest -q'."),
+    workdir: str = typer.Option(".", "--workdir", "-w", help="Project directory (copied to a temp dir per candidate)."),
+    file: str | None = typer.Option(None, "--file", "-f", help="Solution file path relative to workdir."),
+    apply: bool = typer.Option(False, "--apply", help="Write the winning solution into workdir."),
+    context: str | None = typer.Option(None, "--context", "-c"),
+    models: str | None = typer.Option(None, "--models", "-m"),
+    budget: float | None = typer.Option(None, "--budget"),
+    as_json: bool = typer.Option(False, "--json"),
+    no_cache: bool = typer.Option(False, "--no-cache"),
+) -> None:
+    """Council writes code, your tests decide (preset `code`). Exit: 0 pass, 1 fail, 2 uncertain, 3 error.
+
+    Model-written code is executed locally in a temporary copy of the workdir (sandbox: M3).
+    """
+    from pathlib import Path
+
+    if task == "-":
+        task = sys.stdin.read()
+    config = load_config()
+    engine = Engine(config, RunStore(config.storage.resolved))
+    wd = str(Path(workdir).resolve())
+    try:
+        run = asyncio.run(engine.ask(RunRequest(question=task, context=context, mode="code", tests_cmd=tests,
+                                                workdir=wd, solution_path=file, source="cli", budget_usd=budget,
+                                                no_cache=no_cache,
+                                                models=[m.strip() for m in models.split(",")] if models else None)))
+    except (KeyError, ValueError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(3)
+    if run.status != "done" or not run.verdict or not run.verdict.solution:
+        typer.secho(f"Run {run.id} failed: {run.error}", fg="red", err=True)
+        raise typer.Exit(3)
+    v = run.verdict
+    sol = v.solution
+    if apply and (sol.get("passed") or not tests):
+        dest = Path(wd) / sol["filename"]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(sol["code"], encoding="utf-8")
+    if as_json:
+        typer.echo(run.model_dump_json(indent=2))
+    else:
+        color = {"pass": "green", "fail": "red"}.get(v.verdict or "", "yellow")
+        typer.secho(f"Objection! solve: {v.verdict or 'picked by chair'}", fg=color, bold=True)
+        for c in v.candidates:
+            mark = {True: "PASS", False: "FAIL", None: " —  "}[c.get("passed")]
+            typer.echo(f"  [{mark}] round {c.get('round')} {c['model_id']:<16} {c['filename']}")
+        typer.echo(f"\n{v.answer}")
+        if apply:
+            typer.echo(f"→ written to {sol['filename']}" if (sol.get("passed") or not tests) else "→ not applied: tests fail")
+        else:
+            typer.echo(f"\n----- {sol['filename']} -----\n{sol['code']}")
+        typer.echo(f"run {run.id} · ${run.cost_usd:.4f} · {run.latency_s} с{' · cached' if run.cached else ''}")
+    raise typer.Exit(EXIT.get(v.verdict or "uncertain", 2) if tests else 0)
 
 
 @app.command()

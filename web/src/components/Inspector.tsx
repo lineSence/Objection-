@@ -15,6 +15,14 @@ function toMarkdown(run: Run): string {
         ...f.refuted_by.map((o) => `> Objection! ${o.model_id}: ${o.reason}`), "",
       ].filter(Boolean).join("\n\n")),
     ].join("\n");
+  if (run.mode === "code" && v.solution)
+    return [`# Код: ${run.question}`, "", `**${v.verdict ?? "—"}** · ${v.answer}`, "", `## ${v.solution.filename} (${v.solution.model_id})`,
+      "", "```", v.solution.code, "```", "",
+      ...(v.candidates ?? []).map((c) => `- ${c.model_id} · раунд ${c.round} · ${c.passed === null ? "без тестов" : c.passed ? "pass" : "fail"}`)].join("\n");
+  if ((run.mode === "verify" || run.mode === "quick") && v.votes)
+    return [`# ${run.question}`, "", `**Ответ: ${v.answer}** · согласие ${v.agreement ?? "—"}${v.stopped_early ? " · ранняя остановка" : ""}${v.escalated_to ? ` · эскалация → ${v.escalated_to}` : ""}`,
+      "", ...v.votes.map((g) => `- **${g.answer}** — вес ${g.weight} (${g.models.join(", ")}): ${g.reasoning ?? ""}`),
+      v.minority_report ? `\n## Особое мнение\n${v.minority_report}` : ""].join("\n");
   return [
     `# ${run.question}`, "", `**Итог совета.** ${v.answer}`, "",
     `Согласие: ${v.agreement ?? "—"} · уверенность: ${v.confidence ?? "—"} · ${money(run.cost_usd)} · run ${run.id}`,
@@ -36,6 +44,9 @@ export default function Inspector({ run, state }: { run: Run; state: RunState })
   const v = state.verdict;
   const ind = phase(state, "independent");
   const review = run.mode === "review";
+  const voting = run.mode === "verify" || run.mode === "quick";
+  const code = run.mode === "code";
+  const tests = [...phase(state, "test").tests, ...phase(state, "retest").tests];
   const fs = v?.findings ?? [];
   const count = (st: string) => fs.filter((f) => f.status === st).length;
   const [agree, total] = (v?.agreement ?? "").split("/").map(Number);
@@ -83,21 +94,44 @@ export default function Inspector({ run, state }: { run: Run; state: RunState })
           ))}
         </div>
       )}
-      <div>
-        <div className="lbl">Проверка фактов</div>
-        <div className="cl muted">Появится в M3 (Verifier)</div>
-      </div>
+      {voting && v?.votes && v.votes.length > 0 && (
+        <div>
+          <div className="lbl">Голоса</div>
+          {v.votes.map((g, i) => (
+            <div key={i} className="row"><span><span className="dot" style={{ background: i ? "var(--o)" : "var(--g)" }} />{g.answer}</span><b>{g.weight.toFixed(2)}</b></div>
+          ))}
+        </div>
+      )}
+      {code && (
+        <div>
+          <div className="lbl">Тесты</div>
+          {run.tests_cmd ? <div className="cl mono" style={{ fontSize: 12 }}>{run.tests_cmd}</div> : <div className="cl muted">Команда тестов не задана — выбирает председатель</div>}
+          {tests.map((t) => (
+            <div key={t.seq} className="row"><span>{t.modelId}{t.round === 2 ? " · исправл." : ""}</span><span className={`tag ${t.passed ? "g" : "r"}`}>{t.passed ? "pass" : "fail"}</span></div>
+          ))}
+        </div>
+      )}
+      {(v?.stopped_early || v?.escalated_to || run.budget_exhausted || run.route_reason) && (
+        <div>
+          <div className="lbl">Экономия</div>
+          {run.route_reason && <div className="cl"><span className="dot" style={{ background: "var(--blue)" }} />авто → {run.mode}: {run.route_reason}</div>}
+          {v?.stopped_early && <div className="cl"><span className="dot" style={{ background: "var(--g)" }} />ранняя остановка{v.saved_usd_est ? `, ≈${money(v.saved_usd_est)}` : ""}</div>}
+          {v?.escalated_to && <div className="cl"><span className="dot" style={{ background: "var(--o)" }} />эскалация → {v.escalated_to}</div>}
+          {run.budget_exhausted && <div className="cl"><span className="dot" style={{ background: "var(--r)" }} />бюджет исчерпан, результат частичный</div>}
+        </div>
+      )}
 
       <div>
         <div className="lbl">Модели</div>
         {run.models.map((m) => {
           const a = ind.answers.find((x) => x.modelId === m);
           const e = ind.errors.find((x) => x.modelId === m);
+          const idle = !a && !e && state.finished;
           return (
             <div key={m} className="row">
               <span><span className={`${avatarClass(run.models, m)} xs`}>{letter(run.models, m)}</span>{m}
                 {state.agreeing.includes(m) && <span className="tag g">за итог</span>}</span>
-              <span className="muted">{a ? `${money(a.usage.cost_usd)} · ${a.usage.latency_s.toFixed(1)} с` : e ? <span className="tag r">ошибка</span> : "…"}</span>
+              <span className="muted">{a ? `${money(a.usage.cost_usd)} · ${a.usage.latency_s.toFixed(1)} с` : e ? <span className="tag r">{e.error.startsWith("skipped") ? "пропущен" : "ошибка"}</span> : idle ? "не спрашивали" : "…"}</span>
             </div>
           );
         })}

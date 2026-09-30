@@ -21,6 +21,13 @@ class ModelSpec(BaseModel):
     max_parallel: int | None = None
     params: dict[str, Any] = Field(default_factory=dict)  # passed to litellm.completion (temperature, max_tokens, …)
     enabled: bool = True
+    weight: float = Field(default=1.0, ge=0, le=10)  # vote weight in verify/quick
+    price_in: float | None = Field(default=None, ge=0)  # USD per 1M input tokens; overrides LiteLLM pricing
+    price_out: float | None = Field(default=None, ge=0)  # USD per 1M output tokens
+
+    @property
+    def provider(self) -> str:
+        return self.model.split("/", 1)[0]
 
     @property
     def is_local(self) -> bool:
@@ -36,7 +43,7 @@ class CouncilDefaults(BaseModel):
 
 
 class Defaults(BaseModel):
-    mode: str = "deliberate"
+    mode: str = "auto"  # auto | deliberate | verify | quick (review/code need a target / tests)
     council: CouncilDefaults = Field(default_factory=CouncilDefaults)
     judge: str = "auto"
     budget_usd: float = 0.50

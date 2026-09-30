@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from . import prompts
-from .engine import Engine, as_float, ctx_block, parse_json
+from .engine import BudgetExceeded, Engine, as_float, ctx_block, parse_json
 from .schemas import Run, Verdict
 
 
@@ -16,9 +16,20 @@ async def run_deliberate(engine: Engine, run: Run) -> Verdict:
     answers = await independent(engine, run)
     if not answers:
         raise RuntimeError("no model in the council produced an answer")
-    if engine.config.defaults.max_critique_rounds >= 1 and len(answers) >= 2:
-        await critique(engine, run, answers)
-    return await synthesize(engine, run, answers)
+    try:
+        engine.check_budget(run)
+        if engine.config.defaults.max_critique_rounds >= 1 and len(answers) >= 2:
+            await critique(engine, run, answers)
+        return await synthesize(engine, run, answers)
+    except BudgetExceeded as exc:
+        # Partial result: the independent answers without synthesis, clearly marked.
+        return Verdict(
+            answer=f"Budget exhausted ({exc}); synthesis skipped. First independent answer:\n\n{answers[0]['text']}",
+            verdict="uncertain",
+            agreement=None,
+            disputed=[{"point": run.question[:200], "positions": {a["model_id"]: a["position"] for a in answers}}]
+            if len(answers) > 1 else [],
+        )
 
 
 async def independent(engine: Engine, run: Run) -> list[dict[str, Any]]:
@@ -41,7 +52,6 @@ async def independent(engine: Engine, run: Run) -> list[dict[str, Any]]:
     engine.emit(run, "phase_finished", phase=phase, data={
         "answered": len(answers), "failed": len(results) - len(answers),
         "latency_s": round(time.perf_counter() - started, 2)})
-    engine.check_budget(run)
     return answers
 
 
@@ -88,7 +98,6 @@ async def critique(engine: Engine, run: Run, answers: list[dict[str, Any]]) -> N
     engine.emit(run, "phase_finished", phase=phase, data={
         "changed": [a["model_id"] for a in answers if a.get("changed")],
         "latency_s": round(time.perf_counter() - started, 2)})
-    engine.check_budget(run)
 
 
 async def synthesize(engine: Engine, run: Run, answers: list[dict[str, Any]]) -> Verdict:

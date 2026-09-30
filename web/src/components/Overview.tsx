@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type ModelCheck, type PoolModel, type Run, type Stats } from "../api";
 import { go } from "../App";
-import { RVERDICT, SOURCE, money } from "../model";
+import { MODE_LABEL, RVERDICT, SOURCE, money } from "../model";
 
 const STATUS: Record<string, [string, string]> = {
   queued: ["n", "в очереди"], running: ["o", "идёт"], done: ["g", "готово"], failed: ["r", "ошибка"],
@@ -24,6 +24,13 @@ function outcome(r: Run) {
     const n = v.findings.filter((f) => f.status === "confirmed").length;
     return <><span className={`tag ${t}`}>{l}</span> <span className="muted">{n} подтв.</span></>;
   }
+  if (r.mode === "code") {
+    const t = v.verdict === "pass" ? "g" : v.verdict === "fail" ? "r" : "o";
+    return <span className={`tag ${t}`}>{v.verdict === "pass" ? "тесты ✓" : v.verdict === "fail" ? "тесты ×" : v.verdict ?? "выбор председателя"}</span>;
+  }
+  if (r.mode === "verify" || r.mode === "quick")
+    return <><span className={`tag ${v.verdict === "uncertain" ? "o" : "g"}`} title={v.answer}>{v.answer.slice(0, 18)}{v.answer.length > 18 ? "…" : ""} · {v.agreement ?? "—"}</span>
+      {v.stopped_early ? <span className="muted"> ранн. стоп</span> : v.escalated_to ? <span className="muted"> эскал.</span> : null}</>;
   return <span className={`tag ${v.disputed.length ? "o" : "g"}`}>{v.agreement ?? "—"}{v.disputed.length ? ` · ${v.disputed.length} спорн.` : ""}</span>;
 }
 
@@ -64,7 +71,8 @@ export default function Overview({ runs, pool }: { runs: Run[]; pool: PoolModel[
                 <span style={{ color: "var(--oT)" }}>{rv.uncertain ?? 0}</span>
               </div>
               <div className="s">pass / fail / uncertain</div></div>
-            <div className="card kpi"><div className="lbl">Доля спорных</div><div className="v">{s?.disputed_share != null ? `${Math.round(s.disputed_share * 100)}%` : "—"}</div><div className="s">запуски, где совет не сошёлся</div></div>
+            <div className="card kpi"><div className="lbl">Экономия</div><div className="v" style={{ color: "var(--gT)" }}>{s ? `≈${money(s.saved_usd ?? 0)}` : "—"}</div>
+              <div className="s">{s ? `${s.early_stops ?? 0} ранних остановок · ${s.escalations ?? 0} эскалаций${s.disputed_share != null ? ` · спорных ${Math.round(s.disputed_share * 100)}%` : ""}` : "—"}</div></div>
           </div>
 
           <div className="ovgrid">
@@ -77,7 +85,7 @@ export default function Overview({ runs, pool }: { runs: Run[]; pool: PoolModel[
                     {runs.slice(0, 12).map((r) => (
                       <tr key={r.id} onClick={() => go({ page: "run", id: r.id })}>
                         <td className="q" title={r.question}>{r.question}</td>
-                        <td><span className="tag b">{r.mode === "review" ? "ревью" : "вопрос"}</span></td>
+                        <td><span className="tag b" title={r.route_reason ?? undefined}>{r.requested_mode === "auto" ? "авто→" : ""}{MODE_LABEL[r.mode] ?? r.mode}</span></td>
                         <td>{SOURCE[r.source] ?? r.source}</td>
                         <td>{outcome(r)}{r.cached && <span className="tag n" style={{ marginLeft: 4 }}>кэш</span>}</td>
                         <td>{money(r.cost_usd)}</td>

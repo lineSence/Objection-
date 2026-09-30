@@ -14,11 +14,16 @@ from .engine import Engine
 from .providers import health_check
 from .schemas import Run, RunRequest
 from .store import RunStore
+from .voting import normalize
 
 INSTRUCTIONS = """Objection! is a council of independent LLMs.
 - council_review: before committing or opening a PR, pass the diff (or a plan before implementing it). Branch on
   `verdict`: "fail" -> fix the confirmed findings; "uncertain" -> look at the disputed findings; "pass" -> proceed.
-- council_ask: architecture decisions, choosing between approaches, a second opinion when stuck.
+- council_ask: architecture decisions, choosing between approaches, a second opinion when stuck. mode="auto" (default)
+  lets the router pick the cheapest protocol: quick (2 models, escalate on disagreement), verify, deliberate.
+- council_verify: fact-check one claim (an API behaviour, a version, a number) -> confirmed | refuted | unverified.
+- council_solve: several models write a solution, your tests decide (pass tests_cmd + workdir). Model code is executed
+  locally in a temporary copy of workdir. Apply the returned `solution.code` yourself.
 - council_models: which models are in the pool and whether they respond.
 Reviewers see only what you pass (clean context): include the diff and any file content they need.
 Results are cached by input, so repeating the same call is free."""
@@ -47,7 +52,24 @@ def _result(run: Run) -> dict[str, Any]:
     }
     if run.error:
         out["error"] = run.error
+    if run.requested_mode != run.mode:
+        out["routed"] = {"from": run.requested_mode, "reason": run.route_reason}
+    if run.budget_exhausted:
+        out["budget_exhausted"] = True
     if v:
+        if v.votes:
+            out["votes"] = [{"answer": g["answer"], "models": len(g["models"]), "weight": g["weight"]} for g in v.votes]
+        if v.stopped_early:
+            out["stopped_early"] = True
+            out["saved_usd_est"] = v.saved_usd_est
+        if v.escalated_to:
+            out["escalated_to"] = v.escalated_to
+        if run.mode == "code":
+            out["verdict"] = v.verdict
+            out["solution"] = v.solution
+            out["candidates"] = [{k: c.get(k) for k in ("model_id", "filename", "round", "passed")} for c in v.candidates]
+        elif v.verdict and run.mode != "review":
+            out["verdict"] = v.verdict
         out.update(answer=v.answer, confidence=v.confidence, agreement=v.agreement, consensus=v.consensus,
                    disputed=v.disputed, minority_report=v.minority_report, assumptions=v.assumptions)
         if run.mode == "review":
@@ -84,7 +106,7 @@ def build_server(config: Config | None = None, store: RunStore | None = None) ->
                 if ev.type == "phase_started" and ctx is not None:
                     step += 1
                     try:
-                        await ctx.report_progress(step, 4, f"{ev.phase}")
+                        await ctx.report_progress(step, None, f"{ev.phase}")
                     except Exception:  # noqa: BLE001 — progress is best-effort
                         pass
             return _result(await task)
@@ -94,10 +116,39 @@ def build_server(config: Config | None = None, store: RunStore | None = None) ->
     @server.tool(description=(
         "Ask the council a question (preset `deliberate`): independent answers, one anonymous critique round, "
         "synthesis that keeps disagreements. Use for decisions and second opinions."))
-    async def council_ask(question: str, context: str | None = None, models: list[str] | None = None,
+    async def council_ask(question: str, context: str | None = None,
+                          mode: Literal["auto", "deliberate", "verify", "quick"] = "auto",
+                          models: list[str] | None = None,
                           budget_usd: float | None = None, no_cache: bool = False,
                           ctx: Context | None = None) -> dict[str, Any]:
-        return await run_with_progress(RunRequest(question=question, context=context, models=models,
+        return await run_with_progress(RunRequest(question=question, context=context, mode=mode, models=models,
+                                                  budget_usd=budget_usd, no_cache=no_cache), ctx)
+
+    @server.tool(description=(
+        "Fact-check one claim with the council (preset `verify`): independent short answers, weighted vote, critique "
+        "only on disagreement. Returns status confirmed | refuted | unverified with the votes and the reasoning."))
+    async def council_verify(claim: str, context: str | None = None, models: list[str] | None = None,
+                             budget_usd: float | None = None, no_cache: bool = False,
+                             ctx: Context | None = None) -> dict[str, Any]:
+        q = f"Claim: {claim}\nIs this claim true? Answer exactly true, false or unknown."
+        out = await run_with_progress(RunRequest(question=q, context=context, mode="verify", models=models,
+                                                 budget_usd=budget_usd, no_cache=no_cache), ctx)
+        top = (out.get("votes") or [{}])[0]
+        key = {"true": "confirmed", "false": "refuted"}.get(normalize(top.get("answer")))
+        out["status"] = key if key and out.get("verdict") != "uncertain" else "unverified"
+        out["claim"] = claim
+        return out
+
+    @server.tool(description=(
+        "Solve a coding task with the council (preset `code`): every model writes the file, your tests_cmd runs on "
+        "each candidate in a temporary copy of workdir, failing candidates get one fix round with the test log. "
+        "Returns verdict pass|fail and `solution` {filename, code}. Model code is executed locally (no sandbox yet)."))
+    async def council_solve(task: str, tests_cmd: str | None = None, workdir: str | None = None,
+                            solution_path: str | None = None, context: str | None = None,
+                            models: list[str] | None = None, budget_usd: float | None = None,
+                            no_cache: bool = False, ctx: Context | None = None) -> dict[str, Any]:
+        return await run_with_progress(RunRequest(question=task, context=context, mode="code", tests_cmd=tests_cmd,
+                                                  workdir=workdir, solution_path=solution_path, models=models,
                                                   budget_usd=budget_usd, no_cache=no_cache), ctx)
 
     @server.tool(description=(

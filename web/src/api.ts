@@ -6,7 +6,10 @@ export interface Disputed { point: string; positions: Record<string, string> }
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type ReviewVerdict = "pass" | "fail" | "uncertain";
-export type Mode = "deliberate" | "review";
+export type Mode = "auto" | "deliberate" | "review" | "verify" | "quick" | "code";
+
+export interface Vote { answer: string; key?: string; models: string[]; weight: number; reasoning?: string }
+export interface Candidate { model_id: string; filename: string; round: number; passed: boolean | null; explanation: string; output: string; code: string }
 
 export interface Finding {
   id: string;
@@ -31,6 +34,12 @@ export interface Verdict {
   disputed: Disputed[];
   minority_report: string | null;
   assumptions: string[];
+  votes?: Vote[];
+  stopped_early?: boolean;
+  escalated_to?: string | null;
+  solution?: { model_id: string; filename: string; code: string; passed: boolean | null; output: string; round: number } | null;
+  candidates?: Candidate[];
+  saved_usd_est?: number;
 }
 
 export interface Run {
@@ -38,6 +47,12 @@ export interface Run {
   question: string;
   context: string | null;
   mode: Mode;
+  requested_mode?: Mode;
+  route_reason?: string | null;
+  budget_exhausted?: boolean;
+  tests_cmd?: string | null;
+  workdir?: string | null;
+  solution_path?: string | null;
   source: string;
   target: string | null;
   target_kind: string;
@@ -55,7 +70,7 @@ export interface Run {
 }
 
 export type EventType =
-  | "run_started" | "phase_started" | "answer" | "model_error" | "critique"
+  | "run_started" | "phase_started" | "answer" | "model_error" | "critique" | "route" | "test_result"
   | "phase_finished" | "verdict" | "run_finished" | "run_failed";
 
 export interface RunEvent {
@@ -94,6 +109,11 @@ export interface Stats {
   review_verdicts: Record<string, number>;
   disputed_share: number | null;
   cost_by_day: { date: string; cost_usd: number }[];
+  saved_usd?: number;
+  early_stops?: number;
+  escalations?: number;
+  auto_routed?: Record<string, number>;
+  budget_exhausted?: number;
 }
 
 export interface ModelCheck { id: string; ok: boolean; detail: string; latency_s: number }
@@ -105,11 +125,15 @@ export interface NewRun {
   target_kind?: string;
   context?: string;
   models?: string[];
+  tests_cmd?: string;
+  workdir?: string;
+  solution_path?: string;
 }
 
 export interface ModelSpec {
   id: string; model: string; api_base?: string | null; api_key_env?: string | null;
   timeout_s?: number | null; max_parallel?: number | null; params?: Record<string, any>; enabled?: boolean; local?: boolean;
+  weight?: number; price_in?: number | null; price_out?: number | null;
 }
 export interface Provider {
   id: string; label: string; prefix: string; env: string | null; catalog?: string; local?: boolean;
@@ -156,7 +180,7 @@ export const api = {
 };
 
 const TERMINAL: EventType[] = ["run_finished", "run_failed"];
-const TYPES: EventType[] = ["run_started", "phase_started", "answer", "model_error", "critique", "phase_finished", "verdict", "run_finished", "run_failed"];
+const TYPES: EventType[] = ["run_started", "phase_started", "answer", "model_error", "critique", "route", "test_result", "phase_finished", "verdict", "run_finished", "run_failed"];
 
 /** Subscribe to a run's events over SSE. Replays stored events first, then streams live ones. */
 export function streamRun(id: string, onEvent: (e: RunEvent) => void): () => void {

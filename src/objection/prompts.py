@@ -104,3 +104,102 @@ GROUPS_JSON:
 
 Return JSON: {{"votes": [{{"id": finding id, "vote": "confirm"|"refute"|"unsure", "reason": str}}]}}
 """
+
+ROUTER = (
+    "ROLE: router\n"
+    "You pick the cheapest council protocol that can answer a task well. Modes:\n"
+    "- quick: a simple factual question with one short answer (a number, a name, yes/no); two models, escalate on disagreement\n"
+    "- verify: checking a claim or a fact where errors are costly; full council votes, critique only on disagreement\n"
+    "- deliberate: open questions, trade-offs, architecture, advice — answers are free text\n"
+    "Reply with a single JSON object only."
+)
+
+ROUTER_TEMPLATE = """TASK:
+{task}
+
+Return JSON: {{"mode": "quick"|"verify"|"deliberate", "reason": one short sentence}}
+"""
+
+VERIFIER = (
+    "ROLE: verifier\n"
+    "You are one independent member of a fact-checking council; you will not see other answers. Give the shortest "
+    "canonical answer (a number, a name, a date, true/false/unknown for claims) so answers can be compared exactly. "
+    "Say \"unknown\" rather than guess. Reply with a single JSON object only."
+)
+
+VERIFIER_TEMPLATE = """QUESTION:
+{question}
+{context}
+Return JSON: {{"answer": shortest canonical answer, "reasoning": 1-3 sentences, "confidence": number 0..1}}
+"""
+
+VERIFY_CRITIC = (
+    "ROLE: verify-critic\n"
+    "The council disagreed. You see your answer and the anonymous answers of the others, in random order. Your job is "
+    "to find errors, not to agree. Keep your answer unless you found a concrete argument or fact you cannot refute — "
+    "being in the minority is NOT a reason to change. Reply with a single JSON object only."
+)
+
+VERIFY_CRITIC_TEMPLATE = """QUESTION:
+{question}
+{context}
+YOUR_ANSWER:
+{own}
+Your reasoning: {own_reasoning}
+
+OTHER ANSWERS:
+{others}
+
+Return JSON with keys:
+- "answer": your final shortest canonical answer
+- "changed": true if it differs from YOUR_ANSWER
+- "reason": the concrete argument that changed your mind, or null
+- "objections": list of {{"target": <answer number>, "text": the concrete error in that answer}}
+"""
+
+CODER = (
+    "ROLE: coder\n"
+    "You write a complete, working source file that solves the task and passes the project's tests. Output the whole "
+    "file, not a diff; no placeholders. Reply with a single JSON object only."
+)
+
+CODER_TEMPLATE = """TASK:
+{task}
+{context}
+SOLUTION_PATH: {path}
+TESTS_CMD: {tests}
+{project}
+Return JSON: {{"filename": path of the file relative to the project root, "code": full file content, "explanation": one sentence}}
+"""
+
+CODER_FIX_TEMPLATE = """TASK:
+{task}
+{context}
+SOLUTION_PATH: {path}
+TESTS_CMD: {tests}
+{project}
+Your previous file:
+----- BEGIN FILE -----
+{code}
+----- END FILE -----
+
+The tests failed. TEST_OUTPUT:
+{output}
+
+Fix the file. Return JSON: {{"filename": str, "code": full corrected file content, "explanation": what you fixed}}
+"""
+
+CODE_JUDGE = (
+    "ROLE: code-judge\n"
+    "You compare anonymous candidate solutions to the same task. Judge correctness first, then simplicity and "
+    "robustness; ignore length and order. Reply with a single JSON object only."
+)
+
+CODE_JUDGE_TEMPLATE = """TASK:
+{task}
+{context}
+CANDIDATES:
+{candidates}
+
+Return JSON: {{"best": candidate number, "reason": one or two sentences}}
+"""

@@ -11,11 +11,11 @@ from typing import Any
 
 from .bus import EventBus
 from .config import Config, ModelSpec
-from .providers import Completion, ProviderError, complete
-from .schemas import Event, Run, RunRequest, Verdict, now
+from .providers import Completion, ProviderError, complete, estimate_cost
+from .schemas import RESOLVED_MODES, Event, Run, RunRequest, Verdict, now
 from .store import RunStore
 
-PROTOCOL_VERSION = "m1.1"  # bump when prompts/protocols change: invalidates the cache
+PROTOCOL_VERSION = "m2.0"  # bump when prompts/protocols change: invalidates the cache
 
 
 class BudgetExceeded(RuntimeError):
@@ -28,18 +28,28 @@ class Engine:
         self.store = store
         self.bus = bus or EventBus()
         self._seq: dict[str, int] = {}
+        self._reserved: dict[str, float] = {}  # estimated cost of in-flight calls per run (parallel calls)
 
     # ---------- public API ----------
 
     def create_run(self, req: RunRequest) -> Run:
-        if req.mode == "review" and not (req.target and req.target.strip()):
+        mode = req.mode or self.config.defaults.mode or "auto"
+        if mode not in RESOLVED_MODES and mode != "auto":
+            mode = "auto"
+        if mode == "review" and not (req.target and req.target.strip()):
             raise ValueError("review needs `target` (a diff, plan or file content)")
+        if mode == "code" and req.workdir and not __import__("os").path.isdir(req.workdir):
+            raise ValueError(f"workdir does not exist: {req.workdir}")
         council = self.select_council(req.models)
         run = Run(
             id=uuid.uuid4().hex[:12],
             question=req.question,
             context=req.context,
-            mode=req.mode,
+            mode=mode,
+            requested_mode=mode,
+            tests_cmd=req.tests_cmd,
+            workdir=req.workdir,
+            solution_path=req.solution_path,
             source=req.source,
             target=req.target,
             target_kind=req.target_kind,
@@ -51,16 +61,17 @@ class Engine:
         return run
 
     async def execute(self, run: Run) -> Run:
-        from .deliberate import run_deliberate
-        from .review import run_review
+        from .router import route
 
         started = time.perf_counter()
         run.status = "running"
         self.store.save_run(run)
         self.emit(run, "run_started", data={"models": run.models, "mode": run.mode, "budget_usd": run.budget_usd})
         try:
-            protocol = run_review if run.mode == "review" else run_deliberate
-            run.verdict = await protocol(self, run)
+            if run.mode == "auto":
+                await route(self, run)
+                self.store.save_run(run)
+            run.verdict = await self.protocol(run.mode)(self, run)
             self.emit(run, "verdict", data=run.verdict.model_dump())
             run.status = "done"
         except Exception as exc:  # noqa: BLE001 — a run must always end with a terminal event
@@ -74,6 +85,16 @@ class Engine:
             self.store.put_cache(self.cache_key(run), run.id)
             self.emit(run, "run_finished", data={"cost_usd": run.cost_usd, "latency_s": run.latency_s})
         return run
+
+    @staticmethod
+    def protocol(mode: str):
+        from .code import run_code
+        from .deliberate import run_deliberate
+        from .quick import run_quick
+        from .review import run_review
+        from .verify import run_verify
+
+        return {"review": run_review, "verify": run_verify, "quick": run_quick, "code": run_code}.get(mode, run_deliberate)
 
     async def ask(self, req: RunRequest) -> Run:
         """Create + execute, reusing a finished identical run from the cache unless `no_cache`."""
@@ -94,20 +115,37 @@ class Engine:
 
     def cache_key(self, run: Run) -> str:
         specs = sorted((m, self.config.model(m).model) for m in run.models)
-        payload = [PROTOCOL_VERSION, run.mode, run.question, run.context, run.target, run.target_kind, run.fail_on, specs]
+        payload = [PROTOCOL_VERSION, run.requested_mode, run.question, run.context, run.target, run.target_kind,
+                   run.fail_on, specs, run.tests_cmd, run.workdir, run.solution_path]
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
 
     # ---------- helpers for protocols ----------
 
     async def call(self, run: Run, spec: ModelSpec, system: str, user: str, *, phase: str,
                    json_mode: bool = False) -> Completion | None:
-        """One model call: accounts cost; on failure emits `model_error` and returns None."""
+        """One model call: accounts cost; on failure emits `model_error` and returns None.
+
+        Budget manager: the call is skipped (model_error with budget=true) when its estimated cost would push the
+        run over `budget_usd`. Protocols then degrade to a partial result instead of failing.
+        """
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        est = estimate_cost(spec, system + user)
+        reserved = self._reserved.get(run.id, 0.0)
+        if run.cost_usd + reserved + est > run.budget_usd:
+            run.budget_exhausted = True
+            self.emit(run, "model_error", phase=phase, model_id=spec.id, data={
+                "error": f"skipped: estimated ${est:.4f} would exceed the budget "
+                         f"(${run.cost_usd:.4f} spent, ${reserved:.4f} in flight, budget ${run.budget_usd:.2f})",
+                "budget": True})
+            return None
+        self._reserved[run.id] = reserved + est
         try:
             c = await complete(spec, messages, timeout_s=self.config.defaults.timeout_s, json_mode=json_mode)
         except ProviderError as exc:
             self.emit(run, "model_error", phase=phase, model_id=spec.id, data={"error": str(exc)})
             return None
+        finally:
+            self._reserved[run.id] = max(0.0, self._reserved.get(run.id, 0.0) - est)
         run.cost_usd += c.usage.cost_usd
         return c
 
@@ -116,6 +154,8 @@ class Engine:
             c = await self.call(run, spec, system, user, phase=phase, json_mode=True)
             if c is not None:
                 return spec, c
+        if run.budget_exhausted:
+            raise BudgetExceeded(f"budget ${run.budget_usd:.2f} exhausted before the chair could run")
         raise RuntimeError("no chair model could complete the task")
 
     def select_council(self, pinned: list[str] | None) -> list[ModelSpec]:
@@ -136,7 +176,7 @@ class Engine:
         return [self.config.model(i) for i in dict.fromkeys(ids)]
 
     def check_budget(self, run: Run) -> None:
-        if run.cost_usd > run.budget_usd:
+        if run.cost_usd > run.budget_usd or run.budget_exhausted:
             raise BudgetExceeded(f"budget exceeded: ${run.cost_usd:.4f} > ${run.budget_usd:.2f}")
 
     def emit(self, run: Run, type_: str, *, phase: str | None = None, model_id: str | None = None,
@@ -170,8 +210,17 @@ def as_float(v: Any) -> float | None:
         return None
 
 
+def phase_cost(engine: "Engine", run: Run, phase: str) -> float:
+    """Sum of `usage.cost_usd` over answer/critique events of one phase (used for saved-cost estimates)."""
+    total = 0.0
+    for e in engine.store.events(run.id):
+        if e.phase == phase and e.type in ("answer", "critique"):
+            total += float((e.data.get("usage") or {}).get("cost_usd") or 0.0)
+    return total
+
+
 def ctx_block(context: str | None) -> str:
     return f"\nContext:\n{context}\n" if context else ""
 
 
-__all__ = ["Engine", "BudgetExceeded", "Verdict", "parse_json", "as_float", "ctx_block", "PROTOCOL_VERSION"]
+__all__ = ["Engine", "BudgetExceeded", "Verdict", "parse_json", "as_float", "ctx_block", "phase_cost", "PROTOCOL_VERSION"]

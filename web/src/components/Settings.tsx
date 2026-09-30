@@ -141,6 +141,9 @@ function ModelEditor(props: {
   const [maxPar, setMaxPar] = useState(initial.max_parallel?.toString() ?? "");
   const [temp, setTemp] = useState(initial.params?.temperature?.toString() ?? "");
   const [maxTok, setMaxTok] = useState(initial.params?.max_tokens?.toString() ?? "");
+  const [weight, setWeight] = useState(initial.weight != null && initial.weight !== 1 ? String(initial.weight) : "");
+  const [priceIn, setPriceIn] = useState(initial.price_in?.toString() ?? "");
+  const [priceOut, setPriceOut] = useState(initial.price_out?.toString() ?? "");
   const [extra, setExtra] = useState(() => {
     const { temperature, max_tokens, ...rest } = initial.params ?? {};
     return Object.keys(rest).length ? JSON.stringify(rest, null, 1) : "";
@@ -187,6 +190,7 @@ function ModelEditor(props: {
       api_key_env: prov.custom_key ? (key || initial.api_key_env ? keyEnv : null)
         : !isNew && initial.api_key_env && providerOf(initial, providers).id === prov.id ? initial.api_key_env : null,
       timeout_s: timeout ? Number(timeout) : null, max_parallel: maxPar ? Number(maxPar) : null, params,
+      weight: weight ? Number(weight) : 1, price_in: priceIn ? Number(priceIn) : null, price_out: priceOut ? Number(priceOut) : null,
     };
   };
 
@@ -261,12 +265,18 @@ function ModelEditor(props: {
         </label>
       </div>
       <details className="adv">
-        <summary>Дополнительно: таймаут, параллелизм, параметры генерации</summary>
+        <summary>Дополнительно: таймаут, параллелизм, вес голоса, цена, параметры генерации</summary>
         <div className="grid4">
           <label className="field"><span>Таймаут, с</span><input className="inp" type="number" min={1} value={timeout} onChange={(e) => setTimeoutS(e.target.value)} placeholder={String(settings.defaults.timeout_s)} /></label>
           <label className="field"><span>Параллельных запросов</span><input className="inp" type="number" min={1} value={maxPar} onChange={(e) => setMaxPar(e.target.value)} placeholder={prov.local ? "1 для локальных" : "без лимита"} /></label>
           <label className="field"><span>temperature</span><input className="inp" type="number" step="0.1" min={0} max={2} value={temp} onChange={(e) => setTemp(e.target.value)} placeholder="по умолчанию" /></label>
           <label className="field"><span>max_tokens</span><input className="inp" type="number" min={1} value={maxTok} onChange={(e) => setMaxTok(e.target.value)} placeholder="по умолчанию" /></label>
+        </div>
+        <div className="grid4">
+          <label className="field"><span>Вес голоса</span><input className="inp" type="number" step="0.1" min={0} max={10} value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="1" /></label>
+          <label className="field"><span>Цена входа, $/1M</span><input className="inp" type="number" step="0.01" min={0} value={priceIn} onChange={(e) => setPriceIn(e.target.value)} placeholder={entry?.input_per_mtok != null ? `LiteLLM: ${entry.input_per_mtok}` : "из LiteLLM"} /></label>
+          <label className="field"><span>Цена выхода, $/1M</span><input className="inp" type="number" step="0.01" min={0} value={priceOut} onChange={(e) => setPriceOut(e.target.value)} placeholder={entry?.output_per_mtok != null ? `LiteLLM: ${entry.output_per_mtok}` : "из LiteLLM"} /></label>
+          <div className="field"><span>&nbsp;</span><small className="muted">Вес учитывается в режимах «Проверка» и «Быстро»; цена — в бюджете, если LiteLLM её не знает (прокси, свои серверы).</small></div>
         </div>
         <label className="field">
           <span>Другие параметры LiteLLM (JSON)</span>
@@ -348,6 +358,13 @@ function DefaultsSection({ s, onSave }: { s: S; onSave: (d: Defaults) => Promise
         </div>
         <small className="muted">{pinned.length ? `Закреплено: ${pinned.length}. Снимите все, чтобы брать первые N включённых.` : `Не закреплено — берутся первые ${d.council.size} включённые модели. Нажмите, чтобы закрепить.`}</small>
       </div>
+      <label className="field" style={{ maxWidth: 520 }}><span>Режим по умолчанию для вопросов</span>
+        <select className="inp" value={d.mode} onChange={(e) => setD({ ...d, mode: e.target.value })}>
+          <option value="auto">авто — роутер выбирает самый дешёвый подходящий протокол</option>
+          <option value="deliberate">вопрос — независимые ответы, критика, синтез</option>
+          <option value="verify">проверка — голосование, критика только при расхождении</option>
+          <option value="quick">быстро — две модели, эскалация при расхождении</option>
+        </select></label>
       <div className="grid4">
         <label className="field"><span>Размер (без закрепления)</span><input className="inp" type="number" min={1} max={9} value={d.council.size} onChange={(e) => setD({ ...d, council: { ...d.council, size: Number(e.target.value) } })} /></label>
         <label className="field"><span>Председатель</span>

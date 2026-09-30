@@ -174,6 +174,11 @@ def compute_stats(runs: list[Run], days: int) -> dict:
         "avg_cost_usd": round(sum(r.cost_usd for r in finished) / len(finished), 6) if finished else 0.0,
         "review_verdicts": count(r.verdict.verdict for r in reviews),
         "disputed_share": round(sum(bool(r.verdict.disputed) for r in delib) / len(delib), 3) if delib else None,
+        "saved_usd": round(sum(r.verdict.saved_usd_est for r in recent if r.verdict), 6),
+        "early_stops": sum(1 for r in recent if r.verdict and r.verdict.stopped_early),
+        "escalations": sum(1 for r in recent if r.verdict and r.verdict.escalated_to),
+        "auto_routed": count(r.mode for r in recent if r.requested_mode == "auto"),
+        "budget_exhausted": sum(1 for r in recent if r.budget_exhausted),
         "cost_by_day": [{"date": d, "cost_usd": round(c, 6)} for d, c in by_day.items()],
     }
 

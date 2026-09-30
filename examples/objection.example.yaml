@@ -26,9 +26,12 @@ models:
     model: openai/<model-name>
     api_base: https://llm.example.com/v1
     api_key_env: MY_SERVER_KEY
+    weight: 1.5        # вес голоса в verify/quick (по умолч. 1)
+    price_in: 0.5      # $ за 1M входных токенов — для бюджета, если LiteLLM не знает цену
+    price_out: 1.5     # $ за 1M выходных токенов
 
 defaults:
-  mode: auto            # auto | verify | code | review | deliberate | quick
+  mode: auto            # auto | deliberate | verify | quick (review и code включаются материалом / командой тестов)
   council:
     size: 3             # сколько моделей брать из пула (3–5 обычно достаточно)
     selection: auto     # auto (по статистике Model Registry) | pinned

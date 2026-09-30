@@ -4,6 +4,7 @@ import { avatarClass, letter, phase, type Answer, type Critique, type RunState }
 import Composer from "./Composer";
 import Inspector from "./Inspector";
 import { FindingCard, VerdictBanner } from "./Findings";
+import { CandidateItem, RouteNote, SavedNote, ShortAnswer, SolutionFinal, VoteBars, VoteFinal } from "./M2Parts";
 
 function AnswerItem({ run, a }: { run: Run; a: Answer }) {
   const [open, setOpen] = useState(false);
@@ -51,11 +52,19 @@ function CritiqueItem({ run, c }: { run: Run; c: Critique }) {
 export default function ChatView(props: { run: Run; state: RunState; pool: PoolModel[]; onSubmit: (b: NewRun) => Promise<void> }) {
   const { run, state, pool, onSubmit } = props;
   const review = run.mode === "review";
+  const voting = run.mode === "verify" || run.mode === "quick";
+  const code = run.mode === "code";
   const ind = phase(state, "independent");
+  const vote = phase(state, "vote");
+  const fin = phase(state, "final");
+  const tests = [...phase(state, "test").tests, ...phase(state, "retest").tests];
+  const fixp = phase(state, "fix");
+  const testOf = (a: Answer) => tests.find((t) => t.modelId === a.modelId && t.round === (a.round ?? 1));
   const crit = phase(state, "critique");
   const ana = review ? phase(state, "analyze") : null;
   const syn = phase(state, "synthesize");
-  const waiting = run.models.filter((m) => !ind.answers.some((a) => a.modelId === m) && !ind.errors.some((e) => e.modelId === m));
+  const asked: string[] = ind.status === "running" ? (ind.started?.models ?? run.models) : [];
+  const waiting = asked.filter((m) => !ind.answers.some((a) => a.modelId === m) && !ind.errors.some((e) => e.modelId === m));
   const v = state.verdict;
   const [showTarget, setShowTarget] = useState(false);
 
@@ -72,16 +81,37 @@ export default function ChatView(props: { run: Run; state: RunState; pool: PoolM
               {showTarget && <div className="target-view" style={{ marginTop: 6 }}>{run.target}</div>}
             </div>
           )}
+          {code && run.tests_cmd && <div className="muted" style={{ fontSize: 12 }}>Тесты: <span className="mono">{run.tests_cmd}</span>{run.workdir ? <> в <span className="mono">{run.workdir}</span></> : null}</div>}
+          <RouteNote routes={state.routes.filter((r) => !r.escalated)} />
+          {run.mode === "auto" && !state.failed && <div className="pending"><span className="spin" />Выбираю режим…</div>}
           <div className="grp">
-            <div className="lbl">Раунд 1 · {review ? "независимые ревью" : "независимые ответы"}</div>
-            {ind.answers.map((a) => <AnswerItem key={a.seq} run={run} a={a} />)}
+            <div className="lbl">Раунд 1 · {review ? "независимые ревью" : code ? "кандидаты" : "независимые ответы"}</div>
+            {ind.answers.map((a) => voting ? <ShortAnswer key={a.seq} run={run} a={a} />
+              : code ? <CandidateItem key={a.seq} run={run} a={a} test={testOf(a)} /> : <AnswerItem key={a.seq} run={run} a={a} />)}
             {ind.errors.map((e) => <div key={e.modelId} className="err"><b>{e.modelId}:</b> {e.error}</div>)}
             {!state.finished && waiting.map((m) => (
-              <div key={m} className="pending"><span className="spin" />{m} {review ? "ревьюит" : "думает"}…</div>
+              <div key={m} className="pending"><span className="spin" />{m} {review ? "ревьюит" : code ? "пишет код" : "думает"}…</div>
             ))}
+            {code && phase(state, "test").status === "running" && <div className="pending"><span className="spin" />Запускаю тесты на каждом кандидате…</div>}
           </div>
+          {voting && vote.finished?.votes && (
+            <div className="grp">
+              <div className="lbl">Голосование</div>
+              <VoteBars run={run} votes={vote.finished.votes} />
+            </div>
+          )}
+          {voting && state.verdict && <SavedNote v={state.verdict} />}
+          <RouteNote routes={state.routes.filter((r) => r.escalated)} />
+          {code && fixp.status !== "pending" && (
+            <div className="grp">
+              <div className="lbl">Раунд 2 · исправление по логам тестов</div>
+              {fixp.answers.map((a) => <CandidateItem key={a.seq} run={run} a={a} test={testOf(a)} />)}
+              {fixp.errors.map((e) => <div key={e.seq} className="err"><b>{e.modelId}:</b> {e.error}</div>)}
+              {(fixp.status === "running" || phase(state, "retest").status === "running") && <div className="pending"><span className="spin" />Модели исправляют решения…</div>}
+            </div>
+          )}
           {ana?.status === "running" && <div className="pending"><span className="spin" />{ana.judge ?? "Председатель"} объединяет дубликаты…</div>}
-          {!review && (crit.status !== "pending") && (
+          {!review && !code && crit.status !== "pending" && crit.status !== "skipped" && (
             <div className="grp">
               <div className="lbl">Раунд 2 · перекрёстная критика</div>
               {crit.critiques.map((c) => <CritiqueItem key={c.seq} run={run} c={c} />)}
@@ -111,7 +141,9 @@ export default function ChatView(props: { run: Run; state: RunState; pool: PoolM
               {crit.status === "running" && <div className="pending"><span className="spin" />Каждая модель проверяет каждую находку…</div>}
             </div>
           )}
-          {!review && syn.status === "running" && <div className="pending"><span className="spin" />Председатель ({syn.judge}) сводит позиции…</div>}
+          {voting && fin.finished?.votes && !state.verdict && <VoteBars run={run} votes={fin.finished.votes} title="Итоговое голосование" />}
+          {!review && syn.status === "running" && <div className="pending"><span className="spin" />Председатель ({syn.judge}) {code ? "выбирает решение" : "сводит позиции"}…</div>}
+          {v && run.budget_exhausted && <div className="note o"><b>Бюджет исчерпан:</b> часть вызовов пропущена, результат частичный.</div>}
           {v && review && (
             <>
               <VerdictBanner run={{ ...run, verdict: v }} />
@@ -119,7 +151,9 @@ export default function ChatView(props: { run: Run; state: RunState; pool: PoolM
               {(v.findings ?? []).map((f) => <FindingCard key={f.id} run={run} f={f} />)}
             </>
           )}
-          {v && !review && (
+          {v && voting && <VoteFinal run={run} v={v} />}
+          {v && code && <SolutionFinal run={run} v={v} />}
+          {v && !review && !voting && !code && (
             <div className="final">
               <div className="who" style={{ fontSize: 14 }}>
                 <span className="logo" style={{ fontSize: 14 }}>Objection<b>!</b></span> Итог совета

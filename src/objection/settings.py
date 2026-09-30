@@ -108,6 +108,8 @@ def router(config: Config) -> APIRouter:
             [defaults.judge] if defaults.judge != "auto" and defaults.judge not in ids else [])
         if bad:
             raise HTTPException(400, f"unknown models: {', '.join(bad)}")
+        if defaults.mode not in ("auto", "deliberate", "verify", "quick"):
+            raise HTTPException(400, "default mode must be auto, deliberate, verify or quick")
         if not (1 <= defaults.council.size <= 9) or defaults.budget_usd <= 0 or defaults.timeout_s <= 0:
             raise HTTPException(400, "council size 1–9, budget and timeout must be positive")
         config.defaults = defaults

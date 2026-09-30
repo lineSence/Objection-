@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, streamRun, type NewRun, type PoolModel, type Run, type RunEvent } from "../api";
-import { reduce } from "../model";
+import { MODE_LABEL, effectiveMode, reduce } from "../model";
 import ChatView from "./ChatView";
 import TraceView from "./TraceView";
 import DebateView from "./DebateView";
@@ -33,11 +33,13 @@ export default function RunPage(props: {
   }, [runId, onChanged]);
 
   useEffect(() => sessionStorage.setItem("objection.tab", tab), [tab]);
-  const mode = run?.mode ?? "deliberate";
-  const state = useMemo(() => reduce(mode, events), [mode, events]);
+  const mode = run ? effectiveMode(run, events) : "deliberate";
+  const auto = run?.requested_mode === "auto";
+  const state = useMemo(() => reduce(mode, events, auto), [mode, events, auto]);
+  const view = useMemo(() => (run ? { ...run, mode } : null), [run, mode]);
 
   if (err) return <div className="empty">Запуск не найден: {err}</div>;
-  if (!run) return <div className="empty"><span className="spin" style={{ display: "inline-block" }} /></div>;
+  if (!run || !view) return <div className="empty"><span className="spin" style={{ display: "inline-block" }} /></div>;
 
   const status = state.failed ? "failed" : state.finished ? "done" : run.status === "queued" && events.length ? "running" : run.status;
   const [tone, label] = STATUS[status];
@@ -46,7 +48,10 @@ export default function RunPage(props: {
     <>
       <div className="topbar">
         <h3 title={run.question}>{run.mode === "review" ? `Ревью: ${run.question}` : run.question}</h3>
-        <span className="tag b">{run.mode === "review" ? `ревью · ${run.target_kind}` : "вопрос"}</span>
+        <span className="tag b" title={run.route_reason ?? state.routes[0]?.reason ?? undefined}>
+          {auto ? "авто → " : ""}{mode === "review" ? `ревью · ${run.target_kind}` : MODE_LABEL[mode] ?? mode}
+          {state.verdict?.escalated_to ? ` → ${MODE_LABEL[state.verdict.escalated_to]}` : ""}
+        </span>
         <span className={`tag ${tone}`}>{label}</span>
         {run.cached && <span className="tag n" title="Тот же запрос уже отвечен — результат взят из кэша">из кэша</span>}
         {run.source !== "web" && <span className="tag n">источник: {run.source}</span>}
@@ -58,11 +63,11 @@ export default function RunPage(props: {
         </nav>
       </div>
       {tab === "chat" ? (
-        <ChatView run={run} state={state} pool={pool} onSubmit={onSubmit} />
+        <ChatView run={view} state={state} pool={pool} onSubmit={onSubmit} />
       ) : tab === "debate" ? (
-        <DebateView run={run} state={state} />
+        <DebateView run={view} state={state} />
       ) : (
-        <TraceView run={run} state={state} events={events} />
+        <TraceView run={view} auto={auto} state={state} events={events} />
       )}
     </>
   );

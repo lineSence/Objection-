@@ -34,7 +34,7 @@ export default function Sidebar(props: {
               {items.map((r) => (
                 <button key={r.id} className={`ni ${r.id === active ? "a" : ""}`} onClick={() => go({ page: "run", id: r.id })} title={r.question}>
                   <span className="dot" style={{ background: STATUS_COLOR[r.status] }} />
-                  {r.mode === "review" ? "Ревью: " : ""}{r.question}
+                  {r.mode === "review" ? "Ревью: " : r.mode === "code" ? "Код: " : r.mode === "verify" ? "Проверка: " : ""}{r.question}
                 </button>
               ))}
             </div>
