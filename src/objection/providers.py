@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass
 
@@ -23,6 +24,7 @@ class ProviderError(RuntimeError):
 
 
 _semaphores: dict[str, asyncio.Semaphore] = {}
+_RESERVED = {"model", "messages", "timeout", "api_base", "api_key", "response_format", "stream"}
 
 
 def _limit(spec: ModelSpec) -> asyncio.Semaphore | None:
@@ -48,16 +50,27 @@ async def _complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, 
         return await _mock(spec, messages)
     import litellm  # imported lazily: heavy import
 
+    litellm.suppress_debug_info = True
+    litellm.drop_params = True  # e.g. response_format on providers that don't support it
     started = time.perf_counter()
-    kwargs: dict = {"model": spec.model, "messages": messages, "timeout": timeout}
+    kwargs: dict = {k: v for k, v in spec.params.items() if k not in _RESERVED}
+    kwargs.update(model=spec.model, messages=messages, timeout=timeout)
     if spec.api_base:
         kwargs["api_base"] = spec.api_base
+    if spec.api_key_env:
+        key = os.environ.get(spec.api_key_env)
+        if not key:
+            raise ProviderError(f"{spec.id}: environment variable {spec.api_key_env} is not set")
+        kwargs["api_key"] = key
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     try:
         resp = await asyncio.wait_for(litellm.acompletion(**kwargs), timeout=timeout + 5)
     except Exception as exc:  # noqa: BLE001 — surface any provider failure uniformly
-        raise ProviderError(f"{spec.id}: {type(exc).__name__}: {exc}") from exc
+        msg = str(exc).replace("\n", " ")
+        if len(msg) > 600:
+            msg = msg[:600] + "…"
+        raise ProviderError(f"{spec.id}: {type(exc).__name__}: {msg}") from exc
     text = resp.choices[0].message.content or ""
     usage = getattr(resp, "usage", None)
     try:
@@ -151,10 +164,15 @@ _MOCK_ROLES = {
 }
 
 
-async def health_check(spec: ModelSpec, timeout_s: float = 20) -> tuple[bool, str, float]:
+async def probe(spec: ModelSpec, timeout_s: float = 30) -> tuple[bool, str, float, Completion | None]:
     started = time.perf_counter()
     try:
-        await complete(spec, [{"role": "user", "content": "Reply with: ok"}], timeout_s=timeout_s)
+        c = await complete(spec, [{"role": "user", "content": "Reply with: ok"}], timeout_s=timeout_s)
     except ProviderError as exc:
-        return False, str(exc), time.perf_counter() - started
-    return True, "ok", time.perf_counter() - started
+        return False, str(exc), time.perf_counter() - started, None
+    return True, "ok", time.perf_counter() - started, c
+
+
+async def health_check(spec: ModelSpec, timeout_s: float = 30) -> tuple[bool, str, float]:
+    ok, detail, lat, _ = await probe(spec, timeout_s)
+    return ok, detail, lat

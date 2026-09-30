@@ -9,8 +9,10 @@ from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -18,10 +20,12 @@ from .bus import EventBus
 from .config import Config, load_config
 from .engine import Engine
 from .providers import health_check
+from .settings import router as settings_router
 from .schemas import Event, Run, RunRequest, now
 from .store import RunStore
 
 TERMINAL = {"run_finished", "run_failed"}
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 WEB_DIST = Path(str(files("objection") / "web_dist"))
 
 
@@ -31,6 +35,20 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
     engine = Engine(config, store, EventBus())
     app = FastAPI(title="Objection!", version=__version__)
     app.state.engine = engine
+    app.include_router(settings_router(config))
+
+    @app.middleware("http")
+    async def local_only(request: Request, call_next):
+        # The UI can change keys and config: refuse DNS-rebinding hosts and cross-site writes.
+        host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]")
+        if host and host not in LOCAL_HOSTS:
+            return JSONResponse({"detail": "forbidden host"}, status_code=403)
+        origin = request.headers.get("origin")
+        if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
+            o = urlparse(origin).hostname or ""
+            if o not in LOCAL_HOSTS:
+                return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+        return await call_next(request)
     tasks: set[asyncio.Task] = set()
 
     @app.get("/api/health")

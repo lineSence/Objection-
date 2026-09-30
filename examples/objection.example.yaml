@@ -2,9 +2,14 @@
 # Пул моделей задаёт пользователь; его можно менять в любой момент.
 # Идентификаторы моделей — в формате LiteLLM (provider/model).
 
+# Удобнее всего настраивать в Web UI: «Настройки» (objection ui → http://127.0.0.1:6967/#/settings).
+# Ключи API из Web UI хранятся отдельно, в ~/.objection/secrets.env (права 0600); из окружения тоже читаются.
+
 models:
   - id: gpt            # короткое имя для логов и статистики
     model: openai/<your-model>
+    params:            # опционально: любые параметры litellm.completion
+      temperature: 0.3
   - id: claude
     model: anthropic/<your-model>
   - id: gemini
@@ -14,6 +19,13 @@ models:
     api_base: http://localhost:11434
     timeout_s: 180
     max_parallel: 1
+  - id: proxy-model    # модель за LiteLLM Proxy (ключ — LITELLM_PROXY_API_KEY)
+    model: litellm_proxy/<model-name-on-proxy>
+    api_base: http://localhost:4000
+  - id: my-server      # любой OpenAI-совместимый сервер со своим ключом
+    model: openai/<model-name>
+    api_base: https://llm.example.com/v1
+    api_key_env: MY_SERVER_KEY
 
 defaults:
   mode: auto            # auto | verify | code | review | deliberate | quick

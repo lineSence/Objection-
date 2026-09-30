@@ -28,7 +28,7 @@ git diff | bash start.sh review -    # council review of your changes
 
 Or install the `objection` command globally (handy for MCP clients): `pipx install git+https://github.com/lineSence/Objection-.git`, then `objection ui`. Details (in Russian): [docs/install.md](docs/install.md).
 
-Without a config Objection! uses offline `mock/*` models, so you can try the UI right away. Define your own pool in `~/.objection/config.yaml` (or `./objection.yaml`, or `$OBJECTION_CONFIG`) — see [the example](examples/objection.example.yaml). API keys are read by LiteLLM from the usual environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …).
+Without a config Objection! uses offline `mock/*` models, so you can try the UI right away. Add real models in the Web UI (**Settings**: any LiteLLM provider, Ollama / LM Studio / LiteLLM Proxy / OpenAI-compatible servers, API keys, connection test) or define your pool in `~/.objection/config.yaml` (or `./objection.yaml`, or `$OBJECTION_CONFIG`) — see [the example](examples/objection.example.yaml). API keys are read by LiteLLM from the usual environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …).
 
 | Command | What it does |
 | --- | --- |

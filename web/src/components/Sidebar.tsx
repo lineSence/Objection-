@@ -24,6 +24,7 @@ export default function Sidebar(props: {
       <div className="logo" style={{ padding: "4px 10px 12px" }}>Objection<b>!</b></div>
       <button className="btn p" style={{ marginBottom: 8 }} onClick={() => go({ page: "new" })}>Новый вопрос</button>
       <button className={`ni ${route.page === "overview" ? "a" : ""}`} onClick={() => go({ page: "overview" })}>Обзор</button>
+      <button className={`ni ${route.page === "settings" ? "a" : ""}`} onClick={() => go({ page: "settings" })}>Настройки</button>
       <div className="runs">
         {runs.length === 0 && <div className="ni muted">Запусков пока нет</div>}
         {groups(runs).map(([title, items]) =>
@@ -41,7 +42,7 @@ export default function Sidebar(props: {
         )}
       </div>
       <div className="foot">
-        <button className="ni muted" title={pool.map((m) => m.id).join(", ")} onClick={() => go({ page: "overview" })}>Пул моделей · {enabled} активны</button>
+        <button className="ni muted" title={pool.map((m) => m.id).join(", ")} onClick={() => go({ page: "settings" })}>Пул моделей · {enabled} активны</button>
         <div style={{ padding: "0 6px" }}>
           <div className="seg" role="radiogroup" aria-label="Тема">
             {THEMES.map(([k, label]) => (

@@ -71,7 +71,15 @@ export interface RunEvent {
 export interface PoolModel { id: string; model: string; local: boolean; enabled: boolean }
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text || res.statusText;
+    try {
+      const d = JSON.parse(text).detail;
+      msg = Array.isArray(d) ? d.map((e: any) => `${(e.loc ?? []).slice(1).join(".")}: ${e.msg}`).join("; ") : String(d ?? msg);
+    } catch { /* not JSON */ }
+    throw new Error(msg);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -98,6 +106,40 @@ export interface NewRun {
   context?: string;
   models?: string[];
 }
+
+export interface ModelSpec {
+  id: string; model: string; api_base?: string | null; api_key_env?: string | null;
+  timeout_s?: number | null; max_parallel?: number | null; params?: Record<string, any>; enabled?: boolean; local?: boolean;
+}
+export interface Provider {
+  id: string; label: string; prefix: string; env: string | null; catalog?: string; local?: boolean;
+  optional_key?: boolean; custom_key?: boolean; api_base?: string; discover?: "ollama" | "openai";
+}
+export interface KeyStatus { env: string; set: boolean; source: "file" | "env" | null; masked: string | null }
+export interface Defaults {
+  mode: string; council: { size: number; selection: string; pinned: string[] }; judge: string;
+  budget_usd: number; timeout_s: number; anonymize: boolean; max_critique_rounds: number;
+}
+export interface Settings {
+  config_path: string; config_exists: boolean; secrets_path: string;
+  models: ModelSpec[]; defaults: Defaults; providers: Provider[]; keys: KeyStatus[];
+}
+export interface ProbeResult { ok: boolean; detail: string; latency_s: number; reply: string | null; cost_usd: number }
+export interface CatalogEntry { name: string; input_per_mtok: number | null; output_per_mtok: number | null; context: number | null }
+
+const send = <T,>(method: string, url: string, body: unknown) =>
+  fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => json<T>(r));
+
+export const settingsApi = {
+  get: () => fetch("/api/settings").then((r) => json<Settings>(r)),
+  saveModels: (models: ModelSpec[]) => send<Settings>("PUT", "/api/settings/models", models.map(({ local, ...m }) => m)),
+  saveDefaults: (d: Defaults) => send<Settings>("PUT", "/api/settings/defaults", d),
+  saveKeys: (values: Record<string, string | null>) => send<Settings>("PUT", "/api/settings/keys", { values }),
+  test: (spec: ModelSpec, api_key?: string) => send<ProbeResult>("POST", "/api/settings/test", { spec: (({ local, ...m }) => m)(spec), api_key: api_key || null }),
+  catalog: (provider: string) => fetch(`/api/settings/catalog?provider=${encodeURIComponent(provider)}`).then((r) => json<CatalogEntry[]>(r)),
+  discover: (provider: string, api_base: string, api_key_env?: string | null, api_key?: string) =>
+    send<string[]>("POST", "/api/settings/discover", { provider, api_base, api_key_env: api_key_env || null, api_key: api_key || null }),
+};
 
 export const api = {
   stats: (days = 7) => fetch(`/api/stats?days=${days}`).then((r) => json<Stats>(r)),
