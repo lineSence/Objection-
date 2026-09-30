@@ -20,7 +20,7 @@ Asking several models and letting them "debate until they agree" sounds great, b
 
 ```bash
 git clone https://github.com/lineSence/Objection-.git objection && cd objection
-bash start.sh          # Linux/macOS: creates .venv, installs, opens the Web UI at http://127.0.0.1:8765
+bash start.sh          # Linux/macOS: creates .venv, installs, opens the Web UI at http://127.0.0.1:6967
 start.bat              # Windows (or double-click it)
 bash start.sh ask "SQLite or PostgreSQL for run history?"
 git diff | bash start.sh review -    # council review of your changes
@@ -35,7 +35,7 @@ Without a config Objection! uses offline `mock/*` models, so you can try the UI 
 | `objection ask "…" [--json] [-m a,b,c] [--budget 0.2]` | Ask the council; exit code 1 on failure |
 | `objection review [FILE\|-] [--diff REF] [--staged] [--kind diff\|plan\|file\|text] [--fail-on high] [--format json]` | Council code/plan review; exit 0 pass, 1 fail, 2 uncertain, 3 error |
 | `objection mcp` | MCP server over stdio (tools `council_ask`, `council_review`, `council_models`) — see [docs/integrations.md](docs/integrations.md) |
-| `objection ui [--port 8765]` | Local Web UI (binds to 127.0.0.1) |
+| `objection ui [--port 6967]` | Local Web UI (binds to 127.0.0.1) |
 | `objection models list` / `check` | Show / health-check the pool |
 | `objection runs list` / `show <id>` | Run history |
 
@@ -44,7 +44,7 @@ Without a config Objection! uses offline `mock/*` models, so you can try the UI 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
-cd web && npm install && npm run dev     # Vite dev server, proxies /api to :8765
+cd web && npm install && npm run dev     # Vite dev server, proxies /api to :6967
 npm run build                            # writes src/objection/web_dist (bundled into the wheel)
 ```
 

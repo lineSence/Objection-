@@ -23,7 +23,7 @@ INSTRUCTIONS = """Objection! is a council of independent LLMs.
 Reviewers see only what you pass (clean context): include the diff and any file content they need.
 Results are cached by input, so repeating the same call is free."""
 
-UI_URL = os.environ.get("OBJECTION_UI_URL", "http://127.0.0.1:8765")
+UI_URL = os.environ.get("OBJECTION_UI_URL", "http://127.0.0.1:6967")
 
 
 def _client_name(ctx: Context | None) -> str:

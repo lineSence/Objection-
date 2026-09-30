@@ -38,7 +38,7 @@ Web UI есть с первого этапа (D-009). Его задача — п
 
 - Бэкенд: FastAPI в `src/objection/server.py`. Фронтенд: React + TypeScript + Vite в `web/`.
 - Сборка `npm run build` пишет в `src/objection/web_dist/`, оттуда статику раздаёт FastAPI.
-- Разработка: `objection ui --no-open` и `npm run dev` в `web/` (Vite проксирует `/api` на `:8765`).
+- Разработка: `objection ui --no-open` и `npm run dev` в `web/` (Vite проксирует `/api` на `:6967`).
 
 ## Статус
 

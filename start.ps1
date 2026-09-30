@@ -1,5 +1,5 @@
 ﻿# Objection! — быстрый запуск (Windows PowerShell).
-#   .\start.ps1              → Web UI (http://127.0.0.1:8765)
+#   .\start.ps1              → Web UI (http://127.0.0.1:6967)
 #   .\start.ps1 ask "…"      → любая команда objection
 # При первом запуске создаёт .venv и ставит пакет; повторно — только если изменился pyproject.toml.
 $ErrorActionPreference = "Stop"

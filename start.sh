@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Objection! — быстрый запуск (Linux / macOS).
-#   bash start.sh              → Web UI (http://127.0.0.1:8765)
+#   bash start.sh              → Web UI (http://127.0.0.1:6967)
 #   bash start.sh ask "…"      → любая команда objection
 # При первом запуске создаёт .venv и ставит пакет; повторно — только если изменился pyproject.toml.
 set -euo pipefail

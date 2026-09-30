@@ -187,7 +187,7 @@ def runs_show(run_id: str) -> None:
 @app.command()
 def ui(
     host: str = typer.Option("127.0.0.1", help="Bind address. Keep 127.0.0.1 unless you know why."),
-    port: int = typer.Option(8765),
+    port: int = typer.Option(6967),
     open_browser: bool = typer.Option(True, "--open/--no-open"),
 ) -> None:
     """Start the local Web UI."""
