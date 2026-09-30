@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import re
 import time
@@ -15,7 +16,7 @@ from .providers import Completion, ProviderError, complete, estimate_cost
 from .schemas import RESOLVED_MODES, Event, Run, RunRequest, Verdict, now
 from .store import RunStore
 
-PROTOCOL_VERSION = "m2.0"  # bump when prompts/protocols change: invalidates the cache
+PROTOCOL_VERSION = "m3.0"  # bump when prompts/protocols change: invalidates the cache
 
 
 class BudgetExceeded(RuntimeError):
@@ -33,12 +34,14 @@ class Engine:
     # ---------- public API ----------
 
     def create_run(self, req: RunRequest) -> Run:
+        if os.environ.get("OBJECTION_NESTED"):
+            raise ValueError("refused: a council cannot be started from inside the sandbox (recursion guard)")
         mode = req.mode or self.config.defaults.mode or "auto"
         if mode not in RESOLVED_MODES and mode != "auto":
             mode = "auto"
         if mode == "review" and not (req.target and req.target.strip()):
             raise ValueError("review needs `target` (a diff, plan or file content)")
-        if mode == "code" and req.workdir and not __import__("os").path.isdir(req.workdir):
+        if mode == "code" and req.workdir and not os.path.isdir(req.workdir):
             raise ValueError(f"workdir does not exist: {req.workdir}")
         council = self.select_council(req.models)
         run = Run(
@@ -50,6 +53,7 @@ class Engine:
             tests_cmd=req.tests_cmd,
             workdir=req.workdir,
             solution_path=req.solution_path,
+            check_facts=req.check_facts,
             source=req.source,
             target=req.target,
             target_kind=req.target_kind,
@@ -116,10 +120,18 @@ class Engine:
     def cache_key(self, run: Run) -> str:
         specs = sorted((m, self.config.model(m).model) for m in run.models)
         payload = [PROTOCOL_VERSION, run.requested_mode, run.question, run.context, run.target, run.target_kind,
-                   run.fail_on, specs, run.tests_cmd, run.workdir, run.solution_path]
+                   run.fail_on, specs, run.tests_cmd, run.workdir, run.solution_path,
+                   run.check_facts]
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
 
     # ---------- helpers for protocols ----------
+
+    def should_check(self, run: Run, mode: str | None = None) -> bool:
+        """Fact-check this run? Explicit request wins; otherwise the verifier config decides per mode."""
+        if run.check_facts is not None:
+            return run.check_facts
+        v = self.config.verifier
+        return v.enabled and (mode or run.mode) in v.modes
 
     async def call(self, run: Run, spec: ModelSpec, system: str, user: str, *, phase: str,
                    json_mode: bool = False) -> Completion | None:

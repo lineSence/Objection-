@@ -244,7 +244,44 @@ def _mock_code_judge(model_id: str, prompt: str, h: int) -> str:
     return json.dumps({"best": 1, "reason": "самое простое и читаемое решение (mock)"}, ensure_ascii=False)
 
 
+def _mock_claims(model_id: str, prompt: str, h: int) -> str:
+    """Two claims from the final answer (one searched, one computed); one claim per candidate for vote plans."""
+    if "CANDIDATE_ANSWERS:" in prompt:
+        cands = [ln.split("] ", 1)[1] for ln in prompt.split("CANDIDATE_ANSWERS:", 1)[1].split("\n\nFor EVERY", 1)[0]
+                 .strip().splitlines() if "] " in ln]
+        claims = []
+        for i, c in enumerate(cands, 1):
+            if c.strip().lstrip("-").isdigit():
+                n = int(c)
+                claims.append({"candidate": i, "text": f"ответ — {n}", "kind": "number", "method": "python",
+                               "code": f"import json\nprint(json.dumps({{'holds': {n} == 42, 'value': {n}}}))"})
+            else:
+                claims.append({"candidate": i, "text": f"ответ — {c}", "kind": "fact", "method": "search", "query": c})
+        return json.dumps({"claims": claims}, ensure_ascii=False)
+    final = prompt.split("FINAL_ANSWER:", 1)[-1].split("\n\nMEMBER_ANSWERS:", 1)[0].strip()
+    quote = final.split(".")[0].strip() if final else None
+    return json.dumps({"claims": [
+        {"text": quote or "утверждение", "quote": quote, "kind": "fact", "method": "search", "query": quote, "answers": [1, 2]},
+        {"text": "2^10 = 1024", "quote": None, "kind": "number", "method": "python",
+         "code": "import json\nprint(json.dumps({'holds': 2**10 == 1024, 'value': 2**10}))", "answers": [1]},
+    ]}, ensure_ascii=False)
+
+
+def _mock_judge(model_id: str, prompt: str, h: int) -> str:
+    ev = prompt.split("EVIDENCE:", 1)[-1].lower()
+    pro, con = ev.count("подтверждает") + ev.count("confirms"), ev.count("опровергает") + ev.count("refutes")
+    status = "supported" if pro > con else "refuted" if con > pro else "unverified"
+    return json.dumps({"status": status, "evidence": f"mock-судья {model_id}: источники {pro}+/{con}-", "sources": [1]},
+                      ensure_ascii=False)
+
+
+def _mock_reviser(model_id: str, prompt: str, h: int) -> str:
+    return json.dumps({"answer": "Mock-синтез после фактчека: опровергнутое утверждение убрано, остальное без изменений.",
+                       "changes": ["убрано опровергнутое утверждение"]}, ensure_ascii=False)
+
+
 _MOCK_ROLES = {
+    "claim-extractor": _mock_claims, "claim-judge": _mock_judge, "reviser": _mock_reviser,
     "router": _mock_router, "verifier": _mock_verifier, "verify-critic": _mock_verify_critic,
     "coder": _mock_coder, "code-judge": _mock_code_judge,
     "council-member": _mock_plain, "critic": _mock_critic, "chair": _mock_chair, "reviewer": _mock_reviewer,

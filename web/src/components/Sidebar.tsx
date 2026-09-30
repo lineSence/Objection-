@@ -1,4 +1,4 @@
-import type { PoolModel, Run } from "../api";
+import { api, type PoolModel, type Run } from "../api";
 import type { ThemeMode } from "../theme";
 import { go, type Route } from "../App";
 
@@ -14,9 +14,14 @@ function groups(runs: Run[]) {
 
 export default function Sidebar(props: {
   runs: Run[]; route: Route; pool: PoolModel[];
-  theme: ThemeMode; setTheme: (m: ThemeMode) => void;
+  theme: ThemeMode; setTheme: (m: ThemeMode) => void; onDeleted: () => void;
 }) {
-  const { runs, route, pool, theme, setTheme } = props;
+  const { runs, route, pool, theme, setTheme, onDeleted } = props;
+  const del = async (e: React.MouseEvent, r: Run) => {
+    e.stopPropagation();
+    if (!confirm(`Удалить запуск «${r.question.slice(0, 60)}»? Отменить нельзя.`)) return;
+    try { await api.deleteRun(r.id); if (r.id === active) go({ page: "overview" }); onDeleted(); } catch (err) { alert(String(err)); }
+  };
   const active = route.page === "run" ? route.id : null;
   const enabled = pool.filter((m) => m.enabled).length;
   return (
@@ -32,10 +37,12 @@ export default function Sidebar(props: {
             <div key={title}>
               <div className="lbl" style={{ padding: "8px 10px 4px" }}>{title}</div>
               {items.map((r) => (
-                <button key={r.id} className={`ni ${r.id === active ? "a" : ""}`} onClick={() => go({ page: "run", id: r.id })} title={r.question}>
+                <div key={r.id} role="button" tabIndex={0} className={`ni run-item ${r.id === active ? "a" : ""}`} title={r.question}
+                  onClick={() => go({ page: "run", id: r.id })} onKeyDown={(e) => e.key === "Enter" && go({ page: "run", id: r.id })}>
                   <span className="dot" style={{ background: STATUS_COLOR[r.status] }} />
-                  {r.mode === "review" ? "Ревью: " : r.mode === "code" ? "Код: " : r.mode === "verify" ? "Проверка: " : ""}{r.question}
-                </button>
+                  <span className="q">{r.mode === "review" ? "Ревью: " : r.mode === "code" ? "Код: " : r.mode === "verify" ? "Проверка: " : ""}{r.question}</span>
+                  {(r.status === "done" || r.status === "failed") && <button className="x" aria-label="Удалить запуск" title="Удалить" onClick={(e) => del(e, r)}>×</button>}
+                </div>
               ))}
             </div>
           ) : null,

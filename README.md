@@ -32,14 +32,15 @@ Without a config Objection! uses offline `mock/*` models, so you can try the UI 
 
 | Command | What it does |
 | --- | --- |
-| `objection ask "…" [--mode auto\|deliberate\|verify\|quick] [--json] [-m a,b,c] [--budget 0.2]` | Ask the council; `auto` (default) routes to the cheapest fitting protocol; exit code 1 on failure |
+| `objection ask "…" [--mode auto\|deliberate\|verify\|quick] [--check/--no-check] [--json] [-m a,b,c] [--budget 0.2]` | Ask the council; `auto` (default) routes to the cheapest fitting protocol; claims in the answer are fact-checked via your SearXNG + python sandbox ([docs/verifier.md](docs/verifier.md)); exit code 1 on failure |
 | `objection verify "claim"` | Fact-check a claim by weighted vote; exit 0 confirmed, 1 refuted, 2 unverified, 3 error |
-| `objection solve "task" --tests "pytest -q" [--workdir .] [--file path] [--apply]` | Every model writes a solution, your tests pick the winner (runs model code locally, no sandbox yet); exit 0 pass, 1 fail |
+| `objection solve "task" --tests "pytest -q" [--workdir .] [--file path] [--apply]` | Every model writes a solution, your tests pick the winner (tests run in a best-effort sandbox: temp copy, scrubbed env, rlimits, no network on Linux — not a security boundary); exit 0 pass, 1 fail |
 | `objection review [FILE\|-] [--diff REF] [--staged] [--kind diff\|plan\|file\|text] [--fail-on high] [--format json]` | Council code/plan review; exit 0 pass, 1 fail, 2 uncertain, 3 error |
 | `objection mcp` | MCP server over stdio (tools `council_ask`, `council_review`, `council_verify`, `council_solve`, `council_models`) — see [docs/integrations.md](docs/integrations.md) |
 | `objection ui [--port 6967]` | Local Web UI (binds to 127.0.0.1) |
 | `objection models list` / `check` | Show / health-check the pool |
-| `objection runs list` / `show <id>` | Run history |
+| `objection runs list` / `show <id>` / `delete <id…>` | Run history |
+| `objection sandbox` | Show what the local sandbox can isolate on this machine ([docs/sandbox.md](docs/sandbox.md)) |
 
 ## Development
 

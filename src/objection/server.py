@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from . import __version__
 from .bus import EventBus
@@ -27,6 +28,10 @@ from .store import RunStore
 TERMINAL = {"run_finished", "run_failed"}
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 WEB_DIST = Path(str(files("objection") / "web_dist"))
+
+
+class DeleteRuns(BaseModel):
+    ids: list[str]
 
 
 def create_app(config: Config | None = None, store: RunStore | None = None) -> FastAPI:
@@ -50,6 +55,7 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
         return await call_next(request)
     tasks: set[asyncio.Task] = set()
+    running: set[str] = set()
 
     @app.get("/api/health")
     def health() -> dict:
@@ -82,7 +88,9 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
             raise HTTPException(400, str(exc)) from exc
         task = asyncio.create_task(engine.execute(run))
         tasks.add(task)
+        running.add(run.id)
         task.add_done_callback(tasks.discard)
+        task.add_done_callback(lambda _t, rid=run.id: running.discard(rid))
         return run
 
     @app.get("/api/stats")
@@ -95,6 +103,21 @@ def create_app(config: Config | None = None, store: RunStore | None = None) -> F
         if not run:
             raise HTTPException(404, "run not found")
         return run
+
+    @app.delete("/api/runs/{run_id}")
+    def delete_run(run_id: str) -> dict:
+        run = store.get_run(run_id)
+        if not run:
+            raise HTTPException(404, "run not found")
+        if run.status in ("queued", "running") and run.id in running:
+            raise HTTPException(409, "run is in progress; delete it after it finishes")
+        store.delete_run(run_id)
+        return {"deleted": [run_id]}
+
+    @app.post("/api/runs/delete")
+    def delete_runs(body: DeleteRuns) -> dict:
+        deleted = [i for i in body.ids if i not in running and store.delete_run(i)]
+        return {"deleted": deleted, "skipped": [i for i in body.ids if i not in deleted]}
 
     @app.get("/api/runs/{run_id}/events")
     def get_events(run_id: str, after: int = 0) -> list[Event]:
@@ -179,6 +202,8 @@ def compute_stats(runs: list[Run], days: int) -> dict:
         "escalations": sum(1 for r in recent if r.verdict and r.verdict.escalated_to),
         "auto_routed": count(r.mode for r in recent if r.requested_mode == "auto"),
         "budget_exhausted": sum(1 for r in recent if r.budget_exhausted),
+        "claims": count(c.status for r in recent if r.verdict for c in r.verdict.claims),
+        "revised": sum(1 for r in recent if r.verdict and (r.verdict.revised or r.verdict.fact_override)),
         "cost_by_day": [{"date": d, "cost_usd": round(c, 6)} for d, c in by_day.items()],
     }
 

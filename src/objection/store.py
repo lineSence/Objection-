@@ -72,10 +72,12 @@ class RunStore:
             ).fetchall()
         return [Event.model_validate_json(r[0]) for r in rows]
 
-    def delete_run(self, run_id: str) -> None:
+    def delete_run(self, run_id: str) -> bool:
+        """Delete a run with its events and cache entries. Returns False if it did not exist."""
         with self._lock, self._db:
             self._db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
-            self._db.execute("DELETE FROM runs WHERE id=?", (run_id,))
+            self._db.execute("DELETE FROM cache WHERE run_id=?", (run_id,))
+            return self._db.execute("DELETE FROM runs WHERE id=?", (run_id,)).rowcount > 0
 
     def put_cache(self, key: str, run_id: str) -> None:
         with self._lock, self._db:

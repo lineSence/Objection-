@@ -4,6 +4,7 @@ import { avatarClass, letter, phase, type Answer, type Critique, type RunState }
 import Composer from "./Composer";
 import Inspector from "./Inspector";
 import { FindingCard, VerdictBanner } from "./Findings";
+import { ClaimsBlock, FactNotes } from "./FactCheck";
 import { CandidateItem, RouteNote, SavedNote, ShortAnswer, SolutionFinal, VoteBars, VoteFinal } from "./M2Parts";
 
 function AnswerItem({ run, a }: { run: Run; a: Answer }) {
@@ -151,6 +152,8 @@ export default function ChatView(props: { run: Run; state: RunState; pool: PoolM
               {(v.findings ?? []).map((f) => <FindingCard key={f.id} run={run} f={f} />)}
             </>
           )}
+          {!review && !code && <ClaimsBlock run={run} state={state} />}
+          {v && !review && !code && <FactNotes v={v} />}
           {v && voting && <VoteFinal run={run} v={v} />}
           {v && code && <SolutionFinal run={run} v={v} />}
           {v && !review && !voting && !code && (

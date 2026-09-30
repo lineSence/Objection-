@@ -55,7 +55,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar runs={runs} route={route} pool={pool} theme={theme} setTheme={setTheme} />
+      <Sidebar runs={runs} route={route} pool={pool} theme={theme} setTheme={setTheme} onDeleted={refresh} />
       <main className="main">
         {error && <div className="err" style={{ margin: 12 }}>Сервер недоступен: {error}</div>}
         {route.page === "run" ? (
@@ -65,7 +65,7 @@ export default function App() {
         ) : route.page === "new" ? (
           <NewQuestion pool={pool} onSubmit={submit} />
         ) : (
-          <Overview runs={runs} pool={pool} />
+          <Overview runs={runs} pool={pool} onDeleted={refresh} />
         )}
       </main>
     </div>

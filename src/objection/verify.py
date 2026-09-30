@@ -30,7 +30,7 @@ async def run_verify(engine: Engine, run: Run, first: list[dict[str, Any]] | Non
     t = vote(engine, run, answers, phase="vote")
     if t["unanimous"] or len(answers) < 2:
         skip(engine, run, "unanimous" if t["unanimous"] else "single answer")
-        v = verdict(engine, run, answers, t)
+        v = await checked(engine, run, answers, t)
         v.stopped_early = t["unanimous"]
         v.saved_usd_est = round(phase_cost(engine, run, "independent"), 6) if t["unanimous"] else 0.0
         return v
@@ -42,9 +42,25 @@ async def run_verify(engine: Engine, run: Run, first: list[dict[str, Any]] | Non
     await critique(engine, run, answers)
     final = [dict(a, answer=a.get("final_answer", a["answer"])) for a in answers]
     t2 = vote(engine, run, final, phase="final")
-    v = verdict(engine, run, final, t2)
+    v = await checked(engine, run, final, t2)
     if run.budget_exhausted:
         v.verdict = "uncertain"
+    return v
+
+
+async def checked(engine: Engine, run: Run, answers: list[dict[str, Any]], t: dict[str, Any],
+                  force: bool | None = None) -> Verdict:
+    """Fact-check the vote groups (Verifier, M3) when enabled; evidence outranks votes."""
+    from .verifier import check_votes, skip as skip_check
+
+    on = engine.should_check(run, "verify") if force is None else force
+    if not on or run.budget_exhausted:
+        skip_check(engine, run, "budget exhausted" if on else "fact-checking is off")
+        return verdict(engine, run, answers, t)
+    t2, note, claims = await check_votes(engine, run, t, len(answers))
+    v = verdict(engine, run, answers, t2)
+    v.claims = claims
+    v.fact_override = note
     return v
 
 

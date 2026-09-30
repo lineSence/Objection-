@@ -224,3 +224,28 @@ textarea.inp { height: auto; padding: 6px 10px; resize: vertical; }
 .fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .fields input { width: 100%; }
 .warn { font-size: 12px; color: var(--oT); background: var(--oS); border-radius: 8px; padding: 6px 10px; }
+
+/* M3: fact-checking, report */
+.claim { border: 1px solid var(--b); border-radius: 10px; background: var(--card); }
+.claim.refuted { border-color: var(--r); } .claim.supported { border-left: 3px solid var(--g); } .claim.unverified { border-left: 3px solid var(--o); }
+.claim-h { display: flex; gap: 8px; align-items: center; padding: 8px 10px; cursor: pointer; flex-wrap: wrap; }
+.claim-t { font-size: 13px; flex: 1; min-width: 200px; }
+.claim-b { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 8px; }
+.src { border-left: 2px solid var(--b); padding-left: 8px; }
+.src a { color: var(--blue); font-size: 13px; text-decoration: none; } .src a:hover { text-decoration: underline; }
+mark.hl { border-radius: 4px; padding: 0 2px; cursor: pointer; color: inherit; }
+mark.hl sup { font-size: 9px; margin-left: 2px; opacity: .7; }
+mark.hl.supported { background: var(--gS); box-shadow: inset 0 -2px 0 var(--g); }
+mark.hl.refuted { background: var(--rS); box-shadow: inset 0 -2px 0 var(--r); text-decoration: line-through; text-decoration-color: var(--r); }
+mark.hl.unverified { background: var(--oS); box-shadow: inset 0 -2px 0 var(--o); }
+.report { max-width: 920px; margin: 0 auto; padding: 24px 32px; display: flex; flex-direction: column; gap: 12px; }
+.rep-answer { padding: 14px 16px; }
+.ni.run-item { display: flex; align-items: center; gap: 6px; }
+.ni.run-item .q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ni.run-item .x { visibility: hidden; border: 0; background: none; color: var(--t2); cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1; border-radius: 4px; }
+.ni.run-item:hover .x { visibility: visible; } .ni.run-item .x:hover { color: var(--rT); background: var(--rS); }
+.btn.danger { color: var(--rT); } .btn.danger:hover:not(:disabled) { background: var(--rS); }
+.kpis { grid-template-columns: repeat(5, 1fr); }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0 8px; cursor: pointer; }
+.seg.sm button { font-size: 11.5px; padding: 3px 8px; }
+.err-small.wide, .sec .err-small { max-width: none; }

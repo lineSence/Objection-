@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from .engine import Engine, phase_cost
 from .schemas import Run, Verdict
-from .verify import independent, run_verify, skip, verdict, vote
+from .verify import checked, independent, run_verify, skip, vote
 
 
 def pick_pair(engine: Engine, run: Run) -> list[str]:
@@ -29,7 +29,7 @@ async def run_quick(engine: Engine, run: Run) -> Verdict:
     rest = [m for m in run.models if m not in pair]
     if agree or not rest:
         skip(engine, run, "two models agreed" if agree else "no more models to escalate to")
-        v = verdict(engine, run, answers, t)
+        v = await checked(engine, run, answers, t, force=run.check_facts is True)
         v.stopped_early = agree
         if agree and answers:  # a full verify would also ask the remaining members
             per_answer = phase_cost(engine, run, "independent") / len(answers)

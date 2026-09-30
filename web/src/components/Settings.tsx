@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { settingsApi, type CatalogEntry, type Defaults, type ModelSpec, type ProbeResult, type Provider, type Settings as S } from "../api";
+import { settingsApi, type CatalogEntry, type Defaults, type ModelSpec, type SandboxSettings, type SearchTestResult, type VerifierSettings, type ProbeResult, type Provider, type Settings as S } from "../api";
 
 const isMock = (m: ModelSpec) => m.model.startsWith("mock/");
 const slug = (s: string) => s.toLowerCase().replace(/[:@]/g, "-").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "model";
@@ -114,6 +114,8 @@ export default function Settings({ onPoolChanged }: { onPoolChanged: () => void 
 
           <KeysSection s={s} onSave={(values, msg) => apply(settingsApi.saveKeys(values), msg)} />
           <DefaultsSection s={s} onSave={(d) => apply(settingsApi.saveDefaults(d), "Настройки совета сохранены")} />
+          <VerifierSection s={s} onSave={(v) => apply(settingsApi.saveVerifier(v), "Фактчек сохранён")} />
+          <SandboxSection s={s} onSave={(v) => apply(settingsApi.saveSandbox(v), "Песочница сохранена")} />
 
           <div className="muted small" style={{ padding: "0 4px 24px" }}>
             Конфиг: <span className="mono">{s.config_path}</span>{s.config_exists ? "" : " (будет создан при сохранении)"} · ключи: <span className="mono">{s.secrets_path}</span> (доступ только вашему пользователю).
@@ -378,6 +380,100 @@ function DefaultsSection({ s, onSave }: { s: S; onSave: (d: Defaults) => Promise
       <div className="row-btns">
         <button className="btn p sm" disabled={!dirty} onClick={() => onSave(d)}>Сохранить</button>
         {dirty && <button className="btn sm" onClick={() => setD(s.defaults)}>Отменить изменения</button>}
+      </div>
+    </section>
+  );
+}
+
+const FC_MODES: [string, string][] = [["deliberate", "вопрос"], ["verify", "проверка"], ["quick", "быстро"]];
+
+function VerifierSection({ s, onSave }: { s: S; onSave: (v: VerifierSettings) => Promise<boolean> }) {
+  const [v, setV] = useState<VerifierSettings>(s.verifier);
+  const [t, setT] = useState<SearchTestResult | "busy" | null>(null);
+  useEffect(() => setV(s.verifier), [s.verifier]);
+  const dirty = JSON.stringify(v) !== JSON.stringify(s.verifier);
+  const set = (p: Partial<VerifierSettings>) => setV({ ...v, ...p });
+  const toggleMode = (m: string) => set({ modes: v.modes.includes(m) ? v.modes.filter((x) => x !== m) : [...v.modes, m] });
+  const test = async () => {
+    setT("busy");
+    setT(await settingsApi.testSearch(v.searxng_url).catch((e) => ({ ok: false, detail: String(e), results: [] })));
+  };
+  return (
+    <section className="card sec">
+      <div className="sec-h">
+        <h2>Фактчек (Verifier)</h2>
+        <span className="muted">После ответа совета утверждения извлекаются и проверяются веб-поиском через SearXNG или кодом в песочнице. Опровергнутые — исправляются в ответе.</span>
+      </div>
+      <label className="check"><input type="checkbox" checked={v.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Включён</label>
+      <div className="field">
+        <span>Проверять по умолчанию в режимах</span>
+        <div className="chips">
+          {FC_MODES.map(([k, l]) => <button key={k} className={`chip ${v.modes.includes(k) ? "on" : ""}`} onClick={() => toggleMode(k)}>{l}</button>)}
+        </div>
+        <small className="muted">В других режимах — только если включить «фактчек» в запросе (check_facts).</small>
+      </div>
+      <div className="field" style={{ maxWidth: 640 }}>
+        <span>Адрес SearXNG</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input className="inp mono" value={v.searxng_url} onChange={(e) => set({ searxng_url: e.target.value })} placeholder="http://localhost:8888" />
+          <button className="btn sm" disabled={t === "busy" || !v.searxng_url.trim()} onClick={test}>{t === "busy" ? "Проверяю…" : "Проверить"}</button>
+        </div>
+        {t && t !== "busy" && (
+          <div className={t.ok ? "okbox" : "err-small"} style={{ marginTop: 6 }}>
+            <b>{t.ok ? "Работает" : "Не работает"}</b>{t.latency_s != null ? ` · ${t.latency_s.toFixed(2)} с` : ""} — {t.detail}
+            {t.results.slice(0, 3).map((r) => <div key={r.url} className="small muted">• {r.title} <span className="mono">{r.url}</span></div>)}
+          </div>
+        )}
+        <small className="muted">В settings.yml SearXNG должен быть включён JSON: <span className="mono">search: formats: [html, json]</span>.</small>
+      </div>
+      <div className="grid4">
+        <label className="check"><input type="checkbox" checked={v.web_search} onChange={(e) => set({ web_search: e.target.checked })} /> Веб-поиск</label>
+        <label className="check"><input type="checkbox" checked={v.python} onChange={(e) => set({ python: e.target.checked })} /> Python-проверки</label>
+        <label className="check"><input type="checkbox" checked={v.revise} onChange={(e) => set({ revise: e.target.checked })} /> Исправлять ответ</label>
+      </div>
+      <div className="grid4">
+        <label className="field"><span>Утверждений на ответ</span><input className="inp" type="number" min={1} max={20} value={v.max_claims} onChange={(e) => set({ max_claims: Number(e.target.value) })} /></label>
+        <label className="field"><span>Судей на утверждение</span><input className="inp" type="number" min={1} max={5} value={v.judges} onChange={(e) => set({ judges: Number(e.target.value) })} /></label>
+        <label className="field"><span>Результатов поиска</span><input className="inp" type="number" min={1} max={20} value={v.search_results} onChange={(e) => set({ search_results: Number(e.target.value) })} /></label>
+      </div>
+      <div className="row-btns">
+        <button className="btn p sm" disabled={!dirty} onClick={() => onSave(v)}>Сохранить</button>
+        {dirty && <button className="btn sm" onClick={() => setV(s.verifier)}>Отменить изменения</button>}
+      </div>
+    </section>
+  );
+}
+
+function SandboxSection({ s, onSave }: { s: S; onSave: (v: SandboxSettings) => Promise<boolean> }) {
+  const [v, setV] = useState<SandboxSettings>(s.sandbox);
+  useEffect(() => setV(s.sandbox), [s.sandbox]);
+  const dirty = JSON.stringify(v) !== JSON.stringify(s.sandbox);
+  const set = (p: Partial<SandboxSettings>) => setV({ ...v, ...p });
+  const c = s.sandbox.capabilities;
+  return (
+    <section className="card sec">
+      <div className="sec-h">
+        <h2>Песочница</h2>
+        <span className="muted">Где запускаются тесты режима «код» и python-проверки фактчека. Без Docker: временная папка, очищенное окружение, лимиты, таймаут.</span>
+      </div>
+      {c && (
+        <div className="tags" style={{ marginBottom: 8, display: "flex", gap: 6 }}>
+          <span className="tag n">{c.platform}</span>
+          <span className={`tag ${c.rlimits ? "g" : "o"}`}>лимиты CPU/памяти: {c.rlimits ? "да" : "нет"}</span>
+          <span className={`tag ${c.network_isolated ? "g" : "o"}`}>сеть: {c.network_isolated ? "отключена" : v.network ? "разрешена" : "изоляция недоступна"}</span>
+        </div>
+      )}
+      <div className="warn">Это не граница безопасности: код видит файловую систему с правами вашего пользователя. Для враждебного кода используйте отдельную VM.</div>
+      <label className="check"><input type="checkbox" checked={v.network} onChange={(e) => set({ network: e.target.checked })} /> Разрешить сеть внутри песочницы</label>
+      <div className="grid4">
+        <label className="field"><span>Таймаут, с</span><input className="inp" type="number" min={1} value={v.timeout_s} onChange={(e) => set({ timeout_s: Number(e.target.value) })} /></label>
+        <label className="field"><span>Память, МБ</span><input className="inp" type="number" min={64} value={v.memory_mb} onChange={(e) => set({ memory_mb: Number(e.target.value) })} /></label>
+        <label className="field"><span>CPU, с</span><input className="inp" type="number" min={1} value={v.cpu_s} onChange={(e) => set({ cpu_s: Number(e.target.value) })} /></label>
+        <label className="field"><span>Вывод, КБ</span><input className="inp" type="number" min={8} value={v.max_output_kb} onChange={(e) => set({ max_output_kb: Number(e.target.value) })} /></label>
+      </div>
+      <div className="row-btns">
+        <button className="btn p sm" disabled={!dirty} onClick={() => onSave(v)}>Сохранить</button>
+        {dirty && <button className="btn sm" onClick={() => setV(s.sandbox)}>Отменить изменения</button>}
       </div>
     </section>
   );

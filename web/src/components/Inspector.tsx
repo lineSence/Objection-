@@ -1,5 +1,5 @@
 import type { Run } from "../api";
-import { RVERDICT, avatarClass, letter, money, phase, type RunState } from "../model";
+import { CLAIM, RVERDICT, avatarClass, letter, money, phase, type RunState } from "../model";
 
 function toMarkdown(run: Run): string {
   const v = run.verdict;
@@ -23,6 +23,9 @@ function toMarkdown(run: Run): string {
     return [`# ${run.question}`, "", `**Ответ: ${v.answer}** · согласие ${v.agreement ?? "—"}${v.stopped_early ? " · ранняя остановка" : ""}${v.escalated_to ? ` · эскалация → ${v.escalated_to}` : ""}`,
       "", ...v.votes.map((g) => `- **${g.answer}** — вес ${g.weight} (${g.models.join(", ")}): ${g.reasoning ?? ""}`),
       v.minority_report ? `\n## Особое мнение\n${v.minority_report}` : ""].join("\n");
+  const claims = (v.claims ?? []).length
+    ? `\n## Проверка фактов\n${(v.claims ?? []).map((c) => `- **${c.status}** ${c.text}${c.evidence ? ` — ${c.evidence}` : ""}${c.sources[0] ? ` (${c.sources[0].url})` : ""}`).join("\n")}\n`
+    : "";
   return [
     `# ${run.question}`, "", `**Итог совета.** ${v.answer}`, "",
     `Согласие: ${v.agreement ?? "—"} · уверенность: ${v.confidence ?? "—"} · ${money(run.cost_usd)} · run ${run.id}`,
@@ -30,6 +33,7 @@ function toMarkdown(run: Run): string {
     list("Спорные пункты", v.disputed.map((d) => d.point)),
     v.minority_report ? `\n## Особое мнение\n${v.minority_report}\n` : "",
     list("Допущения", v.assumptions),
+    claims,
   ].join("\n");
 }
 
@@ -92,6 +96,16 @@ export default function Inspector({ run, state }: { run: Run; state: RunState })
           {v.consensus.map((c, i) => (
             <div key={i} className="cl"><span className="dot" style={{ background: "var(--g)" }} />{c}</div>
           ))}
+        </div>
+      )}
+      {state.claims.length > 0 && (
+        <div>
+          <div className="lbl">Проверка фактов</div>
+          {(["supported", "refuted", "unverified"] as const).map((k) => (
+            <div key={k} className="row"><span><span className="dot" style={{ background: `var(--${CLAIM[k][0]})` }} />{CLAIM[k][1]}</span><b>{state.claims.filter((c) => c.status === k).length}</b></div>
+          ))}
+          {v?.revised && <div className="cl"><span className="dot" style={{ background: "var(--o)" }} />ответ исправлен</div>}
+          {v?.fact_override && <div className="cl"><span className="dot" style={{ background: "var(--o)" }} />факты перевесили голоса</div>}
         </div>
       )}
       {voting && v?.votes && v.votes.length > 0 && (

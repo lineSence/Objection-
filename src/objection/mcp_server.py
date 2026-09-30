@@ -22,8 +22,9 @@ INSTRUCTIONS = """Objection! is a council of independent LLMs.
 - council_ask: architecture decisions, choosing between approaches, a second opinion when stuck. mode="auto" (default)
   lets the router pick the cheapest protocol: quick (2 models, escalate on disagreement), verify, deliberate.
 - council_verify: fact-check one claim (an API behaviour, a version, a number) -> confirmed | refuted | unverified.
+  Answers carry `claims` checked by web search / Python with sources; a checked fact outweighs the vote.
 - council_solve: several models write a solution, your tests decide (pass tests_cmd + workdir). Model code is executed
-  locally in a temporary copy of workdir. Apply the returned `solution.code` yourself.
+  in the local sandbox (temp copy of workdir, no secrets, no network where possible). Apply `solution.code` yourself.
 - council_models: which models are in the pool and whether they respond.
 Reviewers see only what you pass (clean context): include the diff and any file content they need.
 Results are cached by input, so repeating the same call is free."""
@@ -64,6 +65,14 @@ def _result(run: Run) -> dict[str, Any]:
             out["saved_usd_est"] = v.saved_usd_est
         if v.escalated_to:
             out["escalated_to"] = v.escalated_to
+        if v.claims:
+            out["claims"] = [{"id": c.id, "text": c.text, "status": c.status, "evidence": c.evidence,
+                              "sources": [x["url"] for x in c.sources[:3]], "flagged": c.flagged or None}
+                             for c in v.claims]
+        if v.revised:
+            out["revised"] = True
+        if v.fact_override:
+            out["fact_override"] = v.fact_override
         if run.mode == "code":
             out["verdict"] = v.verdict
             out["solution"] = v.solution
@@ -118,21 +127,22 @@ def build_server(config: Config | None = None, store: RunStore | None = None) ->
         "synthesis that keeps disagreements. Use for decisions and second opinions."))
     async def council_ask(question: str, context: str | None = None,
                           mode: Literal["auto", "deliberate", "verify", "quick"] = "auto",
-                          models: list[str] | None = None,
+                          models: list[str] | None = None, check_facts: bool | None = None,
                           budget_usd: float | None = None, no_cache: bool = False,
                           ctx: Context | None = None) -> dict[str, Any]:
         return await run_with_progress(RunRequest(question=question, context=context, mode=mode, models=models,
-                                                  budget_usd=budget_usd, no_cache=no_cache), ctx)
+                                                  check_facts=check_facts, budget_usd=budget_usd, no_cache=no_cache), ctx)
 
     @server.tool(description=(
         "Fact-check one claim with the council (preset `verify`): independent short answers, weighted vote, critique "
-        "only on disagreement. Returns status confirmed | refuted | unverified with the votes and the reasoning."))
+        "only on disagreement, then the Verifier checks the candidates with web search (SearXNG) or Python; checked "
+        "evidence outranks votes. Returns status confirmed | refuted | unverified with votes, claims and sources."))
     async def council_verify(claim: str, context: str | None = None, models: list[str] | None = None,
-                             budget_usd: float | None = None, no_cache: bool = False,
+                             check_facts: bool | None = None, budget_usd: float | None = None, no_cache: bool = False,
                              ctx: Context | None = None) -> dict[str, Any]:
         q = f"Claim: {claim}\nIs this claim true? Answer exactly true, false or unknown."
         out = await run_with_progress(RunRequest(question=q, context=context, mode="verify", models=models,
-                                                 budget_usd=budget_usd, no_cache=no_cache), ctx)
+                                                 check_facts=check_facts, budget_usd=budget_usd, no_cache=no_cache), ctx)
         top = (out.get("votes") or [{}])[0]
         key = {"true": "confirmed", "false": "refuted"}.get(normalize(top.get("answer")))
         out["status"] = key if key and out.get("verdict") != "uncertain" else "unverified"
@@ -142,7 +152,7 @@ def build_server(config: Config | None = None, store: RunStore | None = None) ->
     @server.tool(description=(
         "Solve a coding task with the council (preset `code`): every model writes the file, your tests_cmd runs on "
         "each candidate in a temporary copy of workdir, failing candidates get one fix round with the test log. "
-        "Returns verdict pass|fail and `solution` {filename, code}. Model code is executed locally (no sandbox yet)."))
+        "Returns verdict pass|fail and `solution` {filename, code}. Model code runs in the local sandbox (not a VM)."))
     async def council_solve(task: str, tests_cmd: str | None = None, workdir: str | None = None,
                             solution_path: str | None = None, context: str | None = None,
                             models: list[str] | None = None, budget_usd: float | None = None,

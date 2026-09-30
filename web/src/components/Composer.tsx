@@ -15,6 +15,7 @@ const DEFAULT_REVIEW = "Найди реальные проблемы: баги, 
 export default function Composer(props: { pool: PoolModel[]; onSubmit: (b: NewRun) => Promise<void>; autoFocus?: boolean }) {
   const { pool, onSubmit, autoFocus } = props;
   const [mode, setMode] = useState<Mode>("auto");
+  const [fc, setFc] = useState<"auto" | "on" | "off">("auto");
   const [tests, setTests] = useState("");
   const [workdir, setWorkdir] = useState("");
   const [file, setFile] = useState("");
@@ -35,7 +36,7 @@ export default function Composer(props: { pool: PoolModel[]; onSubmit: (b: NewRu
         ? { mode, question: q.trim() || DEFAULT_REVIEW, target, target_kind: kind, models }
         : mode === "code"
           ? { mode, question: q.trim(), models, tests_cmd: tests.trim() || undefined, workdir: workdir.trim() || undefined, solution_path: file.trim() || undefined }
-          : { mode, question: q.trim(), models });
+          : { mode, question: q.trim(), models, ...(fc === "auto" ? {} : { check_facts: fc === "on" }) });
       setQ(""); setTarget("");
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   };
@@ -87,6 +88,13 @@ export default function Composer(props: { pool: PoolModel[]; onSubmit: (b: NewRu
           ))}
           {!picked.length && <span className="muted" style={{ fontSize: 12 }}>по умолчанию из конфига</span>}
         </div>
+        {mode !== "review" && mode !== "code" && (
+          <div className="seg sm" role="radiogroup" aria-label="Фактчек" title="Проверка утверждений веб-поиском/кодом">
+            {([["auto", "фактчек: авто"], ["on", "вкл"], ["off", "выкл"]] as const).map(([k, l]) => (
+              <button key={k} className={fc === k ? "on" : ""} onClick={() => setFc(k)}>{l}</button>
+            ))}
+          </div>
+        )}
         <span className="tag n">режим: {MODES.find((m) => m[0] === mode)?.[1]}</span>
         <button className="btn p" disabled={!ready || busy} onClick={send}>{busy ? "Отправка…" : "Отправить"}</button>
       </div>

@@ -32,6 +32,7 @@ def ask(
     source: str = typer.Option("cli", "--source", help="Run source label (cli, opencode, cline…)."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Ignore cached identical runs."),
     mode: str | None = typer.Option(None, "--mode", help="auto | deliberate | verify | quick (default: config, auto)."),
+    check: bool | None = typer.Option(None, "--check/--no-check", help="Fact-check claims (default: config)."),
 ) -> None:
     """Ask the council. `auto` routes to the cheapest fitting protocol."""
     if question == "-":
@@ -43,6 +44,7 @@ def ask(
         raise typer.Exit(3)
     req = RunRequest(
         question=question, context=context, source=source, budget_usd=budget, no_cache=no_cache, mode=mode,
+        check_facts=check,
         models=[m.strip() for m in models.split(",")] if models else None,
     )
     run = asyncio.run(engine.ask(req))
@@ -80,6 +82,26 @@ def _mode_line(run) -> str:
 def _print_votes(v) -> None:
     for g in v.votes:
         typer.echo(f"  {g['weight']:>5.2f}  {g['answer'][:60]:<60}  {', '.join(g['models'])}")
+    _print_claims(v)
+
+
+CLAIM_MARK = {"supported": ("✓", "green"), "refuted": ("✗", "red"), "unverified": ("?", "yellow")}
+
+
+def _print_claims(v) -> None:
+    if v.fact_override:
+        typer.secho(f"Фактчек перевесил голосование: {v.fact_override}", fg="yellow")
+    if v.revised:
+        typer.secho("Ответ исправлен после фактчека.", fg="yellow")
+    if v.claims:
+        typer.echo("\nПроверка фактов:")
+    for c in v.claims:
+        mark, color = CLAIM_MARK[c.status]
+        typer.secho(f"  {mark} [{c.method}] {c.text[:100]}", fg=color)
+        if c.evidence:
+            typer.echo(f"      {c.evidence[:160]}")
+        for src in c.sources[:2]:
+            typer.echo(f"      {src['url']}")
 
 
 SEVERITIES = ["critical", "high", "medium", "low", "info"]
@@ -166,6 +188,7 @@ def verify(
     budget: float | None = typer.Option(None, "--budget"),
     as_json: bool = typer.Option(False, "--json"),
     no_cache: bool = typer.Option(False, "--no-cache"),
+    check: bool | None = typer.Option(None, "--check/--no-check", help="Check candidates with search / Python."),
 ) -> None:
     """Fact-check a claim (preset `verify`). Exit code: 0 confirmed, 1 refuted, 2 unverified, 3 error."""
     from .voting import normalize
@@ -177,7 +200,7 @@ def verify(
     q = f"Claim: {claim}\nIs this claim true? Answer exactly true, false or unknown."
     try:
         run = asyncio.run(engine.ask(RunRequest(question=q, context=context, mode="verify", source="cli",
-                                                budget_usd=budget, no_cache=no_cache,
+                                                budget_usd=budget, no_cache=no_cache, check_facts=check,
                                                 models=[m.strip() for m in models.split(",")] if models else None)))
     except (KeyError, ValueError) as exc:
         typer.secho(str(exc), fg="red", err=True)
@@ -297,6 +320,30 @@ def runs_list(limit: int = 20) -> None:
     config = load_config()
     for r in RunStore(config.storage.resolved).list_runs(limit):
         typer.echo(f"{r.id}  {r.status:<8} {r.source:<9} ${r.cost_usd:.4f}  {r.question[:60]}")
+
+
+@runs_app.command("delete")
+def runs_delete(run_ids: list[str] = typer.Argument(..., help="Run ids to delete.")) -> None:
+    config = load_config()
+    store = RunStore(config.storage.resolved)
+    missing = [r for r in run_ids if not store.delete_run(r)]
+    for r in missing:
+        typer.secho(f"not found: {r}", fg="red", err=True)
+    raise typer.Exit(1 if missing else 0)
+
+
+@app.command("sandbox")
+def sandbox_check() -> None:
+    """Show which sandbox measures are active on this machine."""
+    from . import sandbox
+
+    config = load_config()
+    caps = sandbox.capabilities(config.sandbox)
+    for k, v in caps.items():
+        typer.echo(f"{k:<28} {v}")
+    r = sandbox.run_python("import json, os\nprint(json.dumps({'keys_visible': [k for k in os.environ if 'KEY' in k]}))",
+                           config.sandbox)
+    typer.echo(f"{'probe':<28} exit {r['exit_code']}, {r['output'][:120]}")
 
 
 @runs_app.command("show")

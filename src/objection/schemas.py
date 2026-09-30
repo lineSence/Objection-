@@ -16,6 +16,9 @@ EventType = Literal[
     "critique",
     "route",
     "test_result",
+    "claim",
+    "tool_call",
+    "claim_checked",
     "phase_finished",
     "verdict",
     "run_finished",
@@ -49,6 +52,7 @@ class RunRequest(BaseModel):
     tests_cmd: str | None = None  # shell command that must pass, e.g. "pytest -q"
     workdir: str | None = None  # project directory copied into a temp dir for every candidate
     solution_path: str | None = None  # file the solution is written to, relative to workdir
+    check_facts: bool | None = None  # None → config verifier.enabled / verifier.modes
 
 
 class Usage(BaseModel):
@@ -86,6 +90,28 @@ class Finding(BaseModel):
     status: Literal["confirmed", "disputed", "rejected"] = "disputed"
 
 
+ClaimStatus = Literal["supported", "refuted", "unverified"]
+
+
+class Claim(BaseModel):
+    """A checkable statement from the council's answers (Claim Ledger, M3)."""
+    id: str
+    text: str
+    quote: str | None = None  # exact span of the final answer to highlight
+    kind: str = "fact"  # fact | number | code | citation
+    method: str = "search"  # search | python | none
+    query: str | None = None
+    code: str | None = None
+    authors: list[str] = Field(default_factory=list)  # council members that asserted it
+    in_answer: bool = True
+    status: ClaimStatus = "unverified"
+    evidence: str | None = None
+    sources: list[dict[str, Any]] = Field(default_factory=list)  # [{title, url, snippet}]
+    output: str | None = None  # python output
+    judges: dict[str, str] = Field(default_factory=dict)  # model_id → status
+    flagged: bool = False  # evidence looked like a prompt injection
+
+
 class Verdict(BaseModel):
     answer: str
     verdict: Literal["pass", "fail", "uncertain"] | None = None  # review only
@@ -103,6 +129,11 @@ class Verdict(BaseModel):
     solution: dict[str, Any] | None = None  # code: {model_id, filename, code, passed, output}
     candidates: list[dict[str, Any]] = Field(default_factory=list)  # code: every candidate with its test result
     saved_usd_est: float = 0.0  # estimated cost avoided by early stop / quick path
+    # M3
+    claims: list[Claim] = Field(default_factory=list)
+    revised: bool = False  # the answer was rewritten because a claim in it was refuted
+    original_answer: str | None = None
+    fact_override: str | None = None  # verify: the vote winner was overturned by evidence
 
 
 class Run(BaseModel):
@@ -125,6 +156,7 @@ class Run(BaseModel):
     tests_cmd: str | None = None
     workdir: str | None = None
     solution_path: str | None = None
+    check_facts: bool | None = None  # None → by config (verifier.enabled and mode in verifier.modes)
     latency_s: float | None = None
     verdict: Verdict | None = None
     error: str | None = None

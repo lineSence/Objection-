@@ -8,6 +8,13 @@ export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type ReviewVerdict = "pass" | "fail" | "uncertain";
 export type Mode = "auto" | "deliberate" | "review" | "verify" | "quick" | "code";
 
+export type ClaimStatus = "supported" | "refuted" | "unverified";
+export interface Source { title: string; url: string; snippet: string; engine?: string }
+export interface Claim {
+  id: string; text: string; quote: string | null; kind: string; method: string; query?: string | null; code?: string | null;
+  authors: string[]; in_answer: boolean; status: ClaimStatus; evidence: string | null; sources: Source[];
+  output?: string | null; judges: Record<string, string>; flagged: boolean;
+}
 export interface Vote { answer: string; key?: string; models: string[]; weight: number; reasoning?: string }
 export interface Candidate { model_id: string; filename: string; round: number; passed: boolean | null; explanation: string; output: string; code: string }
 
@@ -40,6 +47,10 @@ export interface Verdict {
   solution?: { model_id: string; filename: string; code: string; passed: boolean | null; output: string; round: number } | null;
   candidates?: Candidate[];
   saved_usd_est?: number;
+  claims?: Claim[];
+  revised?: boolean;
+  original_answer?: string | null;
+  fact_override?: string | null;
 }
 
 export interface Run {
@@ -53,6 +64,7 @@ export interface Run {
   tests_cmd?: string | null;
   workdir?: string | null;
   solution_path?: string | null;
+  check_facts?: boolean | null;
   source: string;
   target: string | null;
   target_kind: string;
@@ -70,7 +82,7 @@ export interface Run {
 }
 
 export type EventType =
-  | "run_started" | "phase_started" | "answer" | "model_error" | "critique" | "route" | "test_result"
+  | "run_started" | "phase_started" | "answer" | "model_error" | "critique" | "route" | "test_result" | "claim" | "tool_call" | "claim_checked"
   | "phase_finished" | "verdict" | "run_finished" | "run_failed";
 
 export interface RunEvent {
@@ -114,6 +126,8 @@ export interface Stats {
   escalations?: number;
   auto_routed?: Record<string, number>;
   budget_exhausted?: number;
+  claims?: Record<string, number>;
+  revised?: number;
 }
 
 export interface ModelCheck { id: string; ok: boolean; detail: string; latency_s: number }
@@ -128,6 +142,7 @@ export interface NewRun {
   tests_cmd?: string;
   workdir?: string;
   solution_path?: string;
+  check_facts?: boolean;
 }
 
 export interface ModelSpec {
@@ -144,9 +159,17 @@ export interface Defaults {
   mode: string; council: { size: number; selection: string; pinned: string[] }; judge: string;
   budget_usd: number; timeout_s: number; anonymize: boolean; max_critique_rounds: number;
 }
+export interface VerifierSettings {
+  enabled: boolean; modes: string[]; web_search: boolean; searxng_url: string; search_results: number;
+  python: boolean; max_claims: number; judges: number; revise: boolean;
+}
+export interface SandboxCaps { platform: string; rlimits: boolean; network_isolated: boolean; network_isolation_available: boolean; note: string }
+export interface SandboxSettings { network: boolean; timeout_s: number; memory_mb: number; cpu_s: number; max_output_kb: number; capabilities?: SandboxCaps }
+export interface SearchTestResult { ok: boolean; detail: string; latency_s?: number; results: Source[] }
 export interface Settings {
   config_path: string; config_exists: boolean; secrets_path: string;
   models: ModelSpec[]; defaults: Defaults; providers: Provider[]; keys: KeyStatus[];
+  verifier: VerifierSettings; sandbox: SandboxSettings;
 }
 export interface ProbeResult { ok: boolean; detail: string; latency_s: number; reply: string | null; cost_usd: number }
 export interface CatalogEntry { name: string; input_per_mtok: number | null; output_per_mtok: number | null; context: number | null }
@@ -160,6 +183,9 @@ export const settingsApi = {
   saveDefaults: (d: Defaults) => send<Settings>("PUT", "/api/settings/defaults", d),
   saveKeys: (values: Record<string, string | null>) => send<Settings>("PUT", "/api/settings/keys", { values }),
   test: (spec: ModelSpec, api_key?: string) => send<ProbeResult>("POST", "/api/settings/test", { spec: (({ local, ...m }) => m)(spec), api_key: api_key || null }),
+  saveVerifier: (v: VerifierSettings) => send<Settings>("PUT", "/api/settings/verifier", v),
+  saveSandbox: ({ capabilities, ...sb }: SandboxSettings) => send<Settings>("PUT", "/api/settings/sandbox", sb),
+  testSearch: (searxng_url: string, query = "SearXNG") => send<SearchTestResult>("POST", "/api/settings/verifier/test", { searxng_url, query }),
   catalog: (provider: string) => fetch(`/api/settings/catalog?provider=${encodeURIComponent(provider)}`).then((r) => json<CatalogEntry[]>(r)),
   discover: (provider: string, api_base: string, api_key_env?: string | null, api_key?: string) =>
     send<string[]>("POST", "/api/settings/discover", { provider, api_base, api_key_env: api_key_env || null, api_key: api_key || null }),
@@ -171,6 +197,8 @@ export const api = {
   runs: () => fetch("/api/runs").then((r) => json<Run[]>(r)),
   run: (id: string) => fetch(`/api/runs/${id}`).then((r) => json<Run>(r)),
   models: () => fetch("/api/models").then((r) => json<PoolModel[]>(r)),
+  deleteRun: (id: string) => fetch(`/api/runs/${id}`, { method: "DELETE" }).then((r) => json<{ deleted: string[] }>(r)),
+  deleteRuns: (ids: string[]) => send<{ deleted: string[]; skipped: string[] }>("POST", "/api/runs/delete", { ids }),
   createRun: (body: NewRun) =>
     fetch("/api/runs", {
       method: "POST",
@@ -180,7 +208,7 @@ export const api = {
 };
 
 const TERMINAL: EventType[] = ["run_finished", "run_failed"];
-const TYPES: EventType[] = ["run_started", "phase_started", "answer", "model_error", "critique", "route", "test_result", "phase_finished", "verdict", "run_finished", "run_failed"];
+const TYPES: EventType[] = ["run_started", "phase_started", "answer", "model_error", "critique", "route", "test_result", "claim", "tool_call", "claim_checked", "phase_finished", "verdict", "run_finished", "run_failed"];
 
 /** Subscribe to a run's events over SSE. Replays stored events first, then streams live ones. */
 export function streamRun(id: string, onEvent: (e: RunEvent) => void): () => void {

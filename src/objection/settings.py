@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .config import Config, Defaults, ModelSpec, config_path, read_secrets, save_config, write_secrets, SECRETS_FILE
+from .config import Config, Defaults, ModelSpec, SandboxConfig, VerifierConfig, config_path, read_secrets, save_config, write_secrets, SECRETS_FILE
 from .providers import probe
 
 # Presets for the "add model" form. `prefix` is the LiteLLM provider prefix; `env` the standard key variable.
@@ -63,6 +63,17 @@ class KeysUpdate(BaseModel):
     values: dict[str, str | None] = Field(default_factory=dict)  # null or "" removes the key
 
 
+class SearchTest(BaseModel):
+    searxng_url: str | None = None
+    query: str = "SearXNG"
+
+
+def sandbox_caps(config: Config) -> dict[str, Any]:
+    from .sandbox import capabilities
+
+    return capabilities(config.sandbox)
+
+
 def router(config: Config) -> APIRouter:
     r = APIRouter(prefix="/api/settings")
 
@@ -75,6 +86,8 @@ def router(config: Config) -> APIRouter:
             "secrets_path": str(SECRETS_FILE),
             "models": [m.model_dump() | {"local": m.is_local} for m in config.models],
             "defaults": config.defaults.model_dump(),
+            "verifier": config.verifier.model_dump(),
+            "sandbox": config.sandbox.model_dump() | {"capabilities": sandbox_caps(config)},
             "providers": PROVIDERS,
             "keys": [key_status(e, secrets) for e in KEY_ENVS + custom],
         }
@@ -115,6 +128,36 @@ def router(config: Config) -> APIRouter:
         config.defaults = defaults
         save_config(config)
         return snapshot()
+
+    @r.put("/verifier")
+    def put_verifier(body: VerifierConfig) -> dict[str, Any]:
+        if not re.match(r"^https?://", body.searxng_url):
+            raise HTTPException(400, "SearXNG URL must start with http:// or https://")
+        bad = [m for m in body.modes if m not in ("deliberate", "verify", "quick")]
+        if bad:
+            raise HTTPException(400, f"unknown modes: {', '.join(bad)}")
+        config.verifier = body
+        save_config(config)
+        return snapshot()
+
+    @r.put("/sandbox")
+    def put_sandbox(body: SandboxConfig) -> dict[str, Any]:
+        config.sandbox = body
+        save_config(config)
+        return snapshot()
+
+    @r.post("/verifier/test")
+    async def test_search(body: SearchTest) -> dict[str, Any]:
+        from .search import SearchError, searxng
+
+        cfg = config.verifier.model_copy(update={"searxng_url": body.searxng_url or config.verifier.searxng_url})
+        started = __import__("time").perf_counter()
+        try:
+            results = await searxng(body.query, cfg, k=3)
+        except SearchError as exc:
+            return {"ok": False, "detail": str(exc), "results": []}
+        return {"ok": bool(results), "detail": f"{len(results)} results" if results else "no results",
+                "latency_s": round(__import__("time").perf_counter() - started, 2), "results": results}
 
     @r.put("/keys")
     def put_keys(body: KeysUpdate) -> dict[str, Any]:

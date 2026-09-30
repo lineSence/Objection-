@@ -1,7 +1,8 @@
 """`code`: candidate solutions from every member → run the project's tests on each → one fix round → winner.
 
 The tests decide, not a model (D-014). Without a tests command a chair picks the best candidate.
-WARNING: model-written code is executed locally in a temporary copy of `workdir`; a real sandbox is planned for M3.
+Model-written code runs in the local sandbox (sandbox.py): temp copy of `workdir`, scrubbed env, rlimits, no network
+where the OS allows it. It is not a jail against hostile code — see docs/sandbox.md.
 """
 
 from __future__ import annotations
@@ -10,19 +11,19 @@ import asyncio
 import os
 import random
 import shutil
-import subprocess
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
-from . import prompts
+from . import prompts, sandbox
+from .config import SandboxConfig
 from .engine import BudgetExceeded, Engine, ctx_block, parse_json
 from .schemas import Run, Verdict
+from .untrusted import wrap
 
 IGNORE = shutil.ignore_patterns(".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache",
                                 "dist", "build", "*.egg-info")
-TEST_TIMEOUT_S = float(os.environ.get("OBJECTION_TEST_TIMEOUT_S", "120"))
 OUTPUT_TAIL = 4000
 MAX_FILE_LIST = 60
 
@@ -47,28 +48,25 @@ def project_listing(workdir: str | None) -> str:
     return "Project files:\n" + "\n".join(sorted(files)) + "\n"
 
 
-def run_tests(workdir: str | None, filename: str, code: str, tests_cmd: str) -> dict[str, Any]:
-    """Copy the project to a temp dir, write the candidate file, run the tests. Never touches `workdir` itself."""
-    started = time.perf_counter()
+def run_tests(workdir: str | None, filename: str, code: str, tests_cmd: str,
+              cfg: SandboxConfig | None = None) -> dict[str, Any]:
+    """Copy the project to a temp dir, write the candidate file, run the tests in the sandbox. `workdir` is untouched."""
+    cfg = cfg or SandboxConfig()
     with tempfile.TemporaryDirectory(prefix="objection-code-") as tmp:
         root = Path(tmp) / "project"
         if workdir:
-            shutil.copytree(workdir, root, ignore=IGNORE, symlinks=True)
+            shutil.copytree(workdir, root, ignore=IGNORE, symlinks=False)
         else:
             root.mkdir()
-        target = root / filename
+        target = (root / filename).resolve()
+        if root.resolve() not in target.parents:
+            return {"passed": False, "exit_code": -1, "output": f"refused: {filename} is outside the project",
+                    "duration_s": 0.0, "network_isolated": False}
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(code, encoding="utf-8")
-        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-        try:
-            p = subprocess.run(tests_cmd, shell=True, cwd=root, capture_output=True, text=True,
-                               timeout=TEST_TIMEOUT_S, env=env)
-            out, code_ = (p.stdout + ("\n" + p.stderr if p.stderr else "")).strip(), p.returncode
-        except subprocess.TimeoutExpired as exc:
-            out = f"timeout after {TEST_TIMEOUT_S:.0f}s\n{(exc.stdout or '')!s}"[-OUTPUT_TAIL:]
-            code_ = -1
-    return {"passed": code_ == 0, "exit_code": code_, "output": out[-OUTPUT_TAIL:],
-            "duration_s": round(time.perf_counter() - started, 2)}
+        r = sandbox.run(tests_cmd, root, cfg, timeout_s=float(os.environ.get("OBJECTION_TEST_TIMEOUT_S") or cfg.timeout_s))
+    return {"passed": r["exit_code"] == 0, "exit_code": r["exit_code"], "output": r["output"][-OUTPUT_TAIL:],
+            "duration_s": r["duration_s"], "network_isolated": r["network_isolated"]}
 
 
 async def run_code(engine: Engine, run: Run) -> Verdict:
@@ -128,7 +126,8 @@ async def test_all(engine: Engine, run: Run, cands: list[dict[str, Any]], *, pha
     started = time.perf_counter()
 
     async def one(c: dict[str, Any]) -> None:
-        r = await asyncio.to_thread(run_tests, run.workdir, c["filename"], c["code"], run.tests_cmd or "")
+        r = await asyncio.to_thread(run_tests, run.workdir, c["filename"], c["code"], run.tests_cmd or "",
+                                    engine.config.sandbox)
         c.update(passed=r["passed"], output=r["output"], exit_code=r["exit_code"])
         engine.emit(run, "test_result", phase=phase, model_id=c["model_id"], data=dict(r, round=c["round"],
                                                                                         filename=c["filename"]))
@@ -146,7 +145,7 @@ async def fix(engine: Engine, run: Run, failed: list[dict[str, Any]]) -> list[di
     async def one(prev: dict[str, Any]) -> dict[str, Any] | None:
         user = prompts.CODER_FIX_TEMPLATE.format(
             task=run.question, context=ctx_block(run.context), path=prev["filename"], tests=run.tests_cmd,
-            project=project_listing(run.workdir), code=prev["code"], output=prev["output"][-3000:])
+            project=project_listing(run.workdir), code=prev["code"], output=wrap(prev["output"][-3000:], f"test output: {run.tests_cmd}", 3200))
         c = await engine.call(run, engine.config.model(prev["model_id"]), prompts.CODER, user, phase=phase, json_mode=True)
         return None if c is None else _candidate(engine, run, prev["model_id"], c, phase, round_=2)
 

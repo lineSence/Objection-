@@ -1,4 +1,4 @@
-import type { Mode, Run, RunEvent, Usage, Verdict } from "./api";
+import type { Claim, Mode, Run, RunEvent, Usage, Verdict } from "./api";
 
 export interface Answer {
   modelId: string; text: string; position: string; usage: Usage; seq: number; findings?: any[]; overall?: string;
@@ -34,10 +34,13 @@ export interface RunState {
   finished: boolean;
   agreeing: string[];
   routes: Route[];
+  claims: Claim[];
+  tools: RunEvent[];
 }
 
 export interface PhaseInfo { key: string; title: string; hint: string; planned?: boolean }
 
+const CHECK: PhaseInfo = { key: "check", title: "Проверка фактов", hint: "Утверждения проверяются поиском (SearXNG) и Python в песочнице; проверенный факт весомее голосов" };
 const ROUTE: PhaseInfo = { key: "route", title: "Маршрутизация", hint: "Авто-режим: правило или самая дешёвая модель выбирает протокол" };
 
 export function phasesFor(mode: Mode, auto = false): PhaseInfo[] {
@@ -57,6 +60,7 @@ export function phasesFor(mode: Mode, auto = false): PhaseInfo[] {
       { key: "critique", title: mode === "quick" ? "Эскалация и критика" : "Анти-конформная критика",
         hint: "Только при расхождении: все видят чужие ответы анонимно и ищут ошибки; менять ответ — только с доводом" },
       { key: "final", title: "Итоговое голосование", hint: "Повторный подсчёт после критики; вердикт считает код, не модель" },
+      CHECK,
     ];
   if (mode === "code")
     return [...pre,
@@ -70,6 +74,7 @@ export function phasesFor(mode: Mode, auto = false): PhaseInfo[] {
     { key: "independent", title: "Независимые ответы", hint: "Модели отвечают параллельно, не видя ответов друг друга" },
     { key: "critique", title: "Перекрёстная критика", hint: "Каждая модель видит 2 чужих анонимных ответа и возражает" },
     { key: "synthesize", title: "Анализ и синтез", hint: "Председатель сводит позиции, сохраняя разногласия" },
+    CHECK,
   ];
 }
 
@@ -84,7 +89,7 @@ export function reduce(mode: Mode, events: RunEvent[], auto = false): RunState {
   const phases = new Map<string, Phase>(
     phasesFor(mode, auto).map((p) => [p.key, { key: p.key, status: "pending", answers: [], errors: [], critiques: [], tests: [] }]),
   );
-  const st: RunState = { phases: [], verdict: null, failed: null, finished: false, agreeing: [], routes: [] };
+  const st: RunState = { phases: [], verdict: null, failed: null, finished: false, agreeing: [], routes: [], claims: [], tools: [] };
   for (const e of events) {
     const ph = e.phase ? phases.get(e.phase) : undefined;
     switch (e.type) {
@@ -101,6 +106,17 @@ export function reduce(mode: Mode, events: RunEvent[], auto = false): RunState {
         if (r && !e.data.escalated) { r.status = "done"; r.finished = { ...e.data }; }
         break;
       }
+      case "claim":
+        st.claims.push({ ...(e.data as Claim), status: "unverified", judges: {}, sources: [], pending: true } as Claim & { pending: boolean });
+        break;
+      case "claim_checked": {
+        const c = st.claims.find((x) => x.id === e.data.id);
+        if (c) Object.assign(c, e.data, { pending: false });
+        break;
+      }
+      case "tool_call":
+        st.tools.push(e);
+        break;
       case "test_result":
         ph?.tests.push({ modelId: e.model_id!, seq: e.seq, ...(e.data as any) });
         break;
@@ -116,6 +132,7 @@ export function reduce(mode: Mode, events: RunEvent[], auto = false): RunState {
         break;
       case "verdict":
         st.verdict = e.data as Verdict;
+        if (st.verdict.claims?.length) st.claims = st.verdict.claims;
         if (mode === "review") { const s = phases.get("synthesize"); if (s) s.status = "done"; }
         break;
       case "run_failed":
@@ -147,5 +164,8 @@ export const FSTATUS: Record<string, [string, string]> = {
 };
 export const RVERDICT: Record<string, [string, string]> = {
   pass: ["g", "pass"], fail: ["r", "fail"], uncertain: ["o", "uncertain"],
+};
+export const CLAIM: Record<string, [string, string]> = {
+  supported: ["g", "подтверждено"], refuted: ["r", "опровергнуто"], unverified: ["o", "не проверено"],
 };
 export const SOURCE: Record<string, string> = { web: "Web", cli: "CLI", opencode: "OpenCode", cline: "Cline", mcp: "MCP" };

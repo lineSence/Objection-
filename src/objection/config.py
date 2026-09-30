@@ -52,6 +52,28 @@ class Defaults(BaseModel):
     max_critique_rounds: int = 1
 
 
+class VerifierConfig(BaseModel):
+    """Fact-checking (M3, D-015): claims from the council's answers are checked with tools."""
+    enabled: bool = True
+    modes: list[str] = Field(default_factory=lambda: ["deliberate", "verify"])  # quick: only after escalation
+    web_search: bool = True
+    searxng_url: str = "http://localhost:8888"  # SearXNG with `formats: [html, json]` in settings.yml
+    search_results: int = Field(default=5, ge=1, le=10)
+    python: bool = True  # computations in the sandbox
+    max_claims: int = Field(default=5, ge=1, le=12)
+    judges: int = Field(default=2, ge=1, le=5)  # models that judge each claim against the evidence
+    revise: bool = True  # re-synthesise the answer when a claim in it was refuted
+
+
+class SandboxConfig(BaseModel):
+    """Local sandbox without Docker (D-015): temp copy, scrubbed env, rlimits, process group, no network if possible."""
+    network: bool = False  # False → isolate with `unshare -rn` when the OS allows it
+    timeout_s: float = Field(default=120, gt=0)
+    memory_mb: int = Field(default=1024, ge=64)
+    cpu_s: int = Field(default=120, ge=1)
+    max_output_kb: int = Field(default=256, ge=4)
+
+
 class Storage(BaseModel):
     path: str = str(DEFAULT_HOME / "runs.sqlite")
 
@@ -63,6 +85,8 @@ class Storage(BaseModel):
 class Config(BaseModel):
     models: list[ModelSpec] = Field(default_factory=list)
     defaults: Defaults = Field(default_factory=Defaults)
+    verifier: VerifierConfig = Field(default_factory=VerifierConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     storage: Storage = Field(default_factory=Storage)
 
     def model(self, model_id: str) -> ModelSpec:
@@ -135,7 +159,7 @@ def load_config(path: Path | None = None) -> Config:
 
 
 def save_config(config: Config, path: Path | None = None) -> Path:
-    """Write models/defaults back to YAML, keeping other sections (e.g. `verifier`) untouched."""
+    """Write models/defaults/verifier/sandbox back to YAML, keeping other sections untouched."""
     path = path or config_path()
     raw: dict[str, Any] = {}
     if path.exists():
@@ -143,6 +167,8 @@ def save_config(config: Config, path: Path | None = None) -> Path:
         path.with_suffix(path.suffix + ".bak").write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     raw["models"] = [m.model_dump(exclude_defaults=True) | {"id": m.id, "model": m.model} for m in config.models]
     raw["defaults"] = config.defaults.model_dump()
+    raw["verifier"] = config.verifier.model_dump()
+    raw["sandbox"] = config.sandbox.model_dump()
     raw.setdefault("storage", {"path": config.storage.path})
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("# Objection! config — edited from the Web UI (Settings) or by hand.\n"

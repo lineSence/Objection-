@@ -4,8 +4,10 @@ import { MODE_LABEL, effectiveMode, reduce } from "../model";
 import ChatView from "./ChatView";
 import TraceView from "./TraceView";
 import DebateView from "./DebateView";
+import ReportView from "./FactCheck";
+import { go } from "../App";
 
-type Tab = "chat" | "trace" | "debate";
+type Tab = "chat" | "trace" | "debate" | "report";
 const STATUS: Record<string, [string, string]> = {
   queued: ["n", "в очереди"], running: ["o", "выполняется"], done: ["g", "готово"], failed: ["r", "ошибка"],
 };
@@ -59,11 +61,18 @@ export default function RunPage(props: {
           <button className={tab === "chat" ? "on" : ""} onClick={() => setTab("chat")}>Чат</button>
           <button className={tab === "debate" ? "on" : ""} onClick={() => setTab("debate")}>Спор</button>
           <button className={tab === "trace" ? "on" : ""} onClick={() => setTab("trace")}>Ход запуска</button>
-          <button disabled title="Появится в M3">Отчёт</button>
+          <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>Отчёт</button>
         </nav>
+        <button className="btn sm danger" disabled={!state.finished && !state.failed} title={state.finished ? "Удалить запуск и его историю" : "Удалить можно после завершения"}
+          onClick={async () => {
+            if (!confirm("Удалить этот запуск вместе с ходом и результатом? Отменить нельзя.")) return;
+            try { await api.deleteRun(run.id); onChanged(); go({ page: "overview" }); } catch (e) { alert(String(e)); }
+          }}>Удалить</button>
       </div>
       {tab === "chat" ? (
         <ChatView run={view} state={state} pool={pool} onSubmit={onSubmit} />
+      ) : tab === "report" ? (
+        <ReportView run={view} state={state} />
       ) : tab === "debate" ? (
         <DebateView run={view} state={state} />
       ) : (

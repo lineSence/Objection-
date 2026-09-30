@@ -34,7 +34,18 @@ function outcome(r: Run) {
   return <span className={`tag ${v.disputed.length ? "o" : "g"}`}>{v.agreement ?? "—"}{v.disputed.length ? ` · ${v.disputed.length} спорн.` : ""}</span>;
 }
 
-export default function Overview({ runs, pool }: { runs: Run[]; pool: PoolModel[] }) {
+export default function Overview({ runs, pool, onDeleted }: { runs: Run[]; pool: PoolModel[]; onDeleted?: () => void }) {
+  const [sel, setSel] = useState<string[]>([]);
+  const [delErr, setDelErr] = useState<string | null>(null);
+  const del = async () => {
+    if (!sel.length || !confirm(`Удалить ${sel.length} запуск(ов)? Это нельзя отменить.`)) return;
+    setDelErr(null);
+    try {
+      const r = await api.deleteRuns(sel);
+      if (r.skipped.length) setDelErr(`Не удалено (ещё идут или не найдены): ${r.skipped.length}`);
+      setSel([]); onDeleted?.();
+    } catch (e) { setDelErr(String(e)); }
+  };
   const [stats, setStats] = useState<Stats | null>(null);
   const [checks, setChecks] = useState<Record<string, ModelCheck>>({});
   const [checking, setChecking] = useState(false);
@@ -71,19 +82,32 @@ export default function Overview({ runs, pool }: { runs: Run[]; pool: PoolModel[
                 <span style={{ color: "var(--oT)" }}>{rv.uncertain ?? 0}</span>
               </div>
               <div className="s">pass / fail / uncertain</div></div>
+            <div className="card kpi"><div className="lbl">Фактчек</div>
+              <div className="v" style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+                <span style={{ color: "var(--gT)" }}>{s?.claims?.supported ?? 0}</span><span className="muted">/</span>
+                <span style={{ color: "var(--rT)" }}>{s?.claims?.refuted ?? 0}</span><span className="muted">/</span>
+                <span style={{ color: "var(--oT)" }}>{s?.claims?.unverified ?? 0}</span>
+              </div>
+              <div className="s">подтв. / опроверг. / не проверено · исправлено ответов: {s?.revised ?? 0}</div></div>
             <div className="card kpi"><div className="lbl">Экономия</div><div className="v" style={{ color: "var(--gT)" }}>{s ? `≈${money(s.saved_usd ?? 0)}` : "—"}</div>
               <div className="s">{s ? `${s.early_stops ?? 0} ранних остановок · ${s.escalations ?? 0} эскалаций${s.disputed_share != null ? ` · спорных ${Math.round(s.disputed_share * 100)}%` : ""}` : "—"}</div></div>
           </div>
 
           <div className="ovgrid">
             <div className="card" style={{ overflow: "hidden" }}>
-              <div style={{ padding: "12px 12px 4px" }} className="lbl">Последние запуски</div>
+              <div style={{ padding: "12px 12px 4px", display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="lbl">Последние запуски</span>
+                {sel.length > 0 && <button className="btn danger sm" style={{ marginLeft: "auto" }} onClick={del}>Удалить выбранные ({sel.length})</button>}
+              </div>
+              {delErr && <div className="err-small" style={{ padding: "0 12px" }}>{delErr}</div>}
               {runs.length === 0 ? <div className="empty">Запусков пока нет. Задайте вопрос или вызовите council_review из OpenCode/Cline.</div> : (
                 <table className="runs">
-                  <thead><tr><th>Запрос</th><th>Режим</th><th>Источник</th><th>Итог</th><th>Цена</th><th>Когда</th></tr></thead>
+                  <thead><tr><th style={{ width: 28 }} /><th>Запрос</th><th>Режим</th><th>Источник</th><th>Итог</th><th>Цена</th><th>Когда</th></tr></thead>
                   <tbody>
                     {runs.slice(0, 12).map((r) => (
                       <tr key={r.id} onClick={() => go({ page: "run", id: r.id })}>
+                        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label="Выбрать" checked={sel.includes(r.id)}
+                          onChange={(e) => setSel((p) => e.target.checked ? [...p, r.id] : p.filter((x) => x !== r.id))} /></td>
                         <td className="q" title={r.question}>{r.question}</td>
                         <td><span className="tag b" title={r.route_reason ?? undefined}>{r.requested_mode === "auto" ? "авто→" : ""}{MODE_LABEL[r.mode] ?? r.mode}</span></td>
                         <td>{SOURCE[r.source] ?? r.source}</td>

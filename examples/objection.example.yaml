@@ -42,10 +42,23 @@ defaults:
   anonymize: true
   max_critique_rounds: 1
 
-verifier:
+verifier:                     # фактчек ответов (docs/verifier.md)
+  enabled: true
+  modes: [deliberate, verify]  # где проверять по умолчанию; флаг check_facts запроса главнее
   web_search: true
-  python_sandbox: true
-  run_tests: true
+  searxng_url: http://localhost:8888   # в settings.yml SearXNG: search.formats: [html, json]
+  search_results: 5
+  python: true                # python-проверки в песочнице
+  max_claims: 5
+  judges: 2
+  revise: true                # исправлять ответ, если утверждение опровергнуто
+
+sandbox:                      # тесты code и python-проверки (docs/sandbox.md); не граница безопасности
+  network: false
+  timeout_s: 120
+  memory_mb: 1024
+  cpu_s: 120
+  max_output_kb: 256
 
 storage:
   path: ~/.objection/runs.sqlite

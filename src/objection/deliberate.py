@@ -20,7 +20,7 @@ async def run_deliberate(engine: Engine, run: Run) -> Verdict:
         engine.check_budget(run)
         if engine.config.defaults.max_critique_rounds >= 1 and len(answers) >= 2:
             await critique(engine, run, answers)
-        return await synthesize(engine, run, answers)
+        verdict = await synthesize(engine, run, answers)
     except BudgetExceeded as exc:
         # Partial result: the independent answers without synthesis, clearly marked.
         return Verdict(
@@ -30,6 +30,15 @@ async def run_deliberate(engine: Engine, run: Run) -> Verdict:
             disputed=[{"point": run.question[:200], "positions": {a["model_id"]: a["position"] for a in answers}}]
             if len(answers) > 1 else [],
         )
+    if engine.should_check(run):
+        from .verifier import check_answer
+
+        await check_answer(engine, run, verdict, answers)
+    else:
+        from .verifier import skip
+
+        skip(engine, run, "fact-checking is off")
+    return verdict
 
 
 async def independent(engine: Engine, run: Run) -> list[dict[str, Any]]:

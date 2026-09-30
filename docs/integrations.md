@@ -10,13 +10,15 @@ Objection! подключается к агентам как **MCP-сервер*
 
 | Инструмент | Вход | Выход | Когда агенту вызывать |
 | --- | --- | --- | --- |
-| `council_ask` | `question`, `context?`, `mode?` (`auto` по умолч. / `deliberate` / `verify` / `quick`), `models?`, `budget_usd?`, `no_cache?` | `answer`, `confidence`, `agreement`, `disputed`, `minority_report`; для `verify`/`quick` — `votes`, `stopped_early`, `escalated_to`; `routed` — куда отправил авто-режим | архитектурное решение, выбор подхода, «второе мнение», короткий фактический вопрос |
+| `council_ask` | `question`, `context?`, `mode?` (`auto` по умолч. / `deliberate` / `verify` / `quick`), `models?`, `budget_usd?`, `no_cache?`, `check_facts?` | `answer`, `confidence`, `agreement`, `disputed`, `minority_report`; для `verify`/`quick` — `votes`, `stopped_early`, `escalated_to`; `routed` — куда отправил авто-режим; фактчек — `claims[]`, `revised`, `fact_override` | архитектурное решение, выбор подхода, «второе мнение», короткий фактический вопрос |
 | `council_review` | `target` (дифф / план / файл / текст), `kind`, `instructions?`, `context?`, `fail_on?` (по умолч. `high`), `models?`, `budget_usd?`, `no_cache?` | `verdict` (`pass` / `fail` / `uncertain`), `findings[]` с `severity`, `status`, голосами | перед коммитом / PR, перед реализацией плана |
 | `council_models` | `check?` | пул моделей и (если `check`) их доступность | диагностика |
-| `council_verify` | `claim`, `context?`, `models?`, `budget_usd?`, `no_cache?` | `status` (`confirmed` / `refuted` / `unverified`), `votes`, `agreement`, `minority_report`, `stopped_early` | проверить факт перед тем, как на него опереться: поведение API, версия, число |
+| `council_verify` | `claim`, `context?`, `models?`, `budget_usd?`, `no_cache?`, `check_facts?` | `status` (`confirmed` / `refuted` / `unverified`), `votes`, `agreement`, `minority_report`, `stopped_early` | проверить факт перед тем, как на него опереться: поведение API, версия, число |
 | `council_solve` | `task`, `tests_cmd?`, `workdir?`, `solution_path?`, `context?`, `models?`, `budget_usd?` | `verdict` (`pass` / `fail` / `uncertain`), `solution` {`filename`, `code`, `model_id`, `passed`}, `candidates[]` | несколько независимых решений, победителя выбирают ваши тесты; агент сам применяет `solution.code` |
 
-**Внимание (`council_solve`):** код моделей запускается локально, во временной копии `workdir` (исходная папка не меняется), с таймаутом `OBJECTION_TEST_TIMEOUT_S` (120 с), но **без песочницы** — песочница запланирована в M3.
+**Фактчек (M3):** в `deliberate` и `verify` ответ совета проверяется веб-поиском через SearXNG и python-скриптами; в выводе — `claims[]` со статусами и источниками, при опровержении ответ исправлен (`revised: true`). Отключить — `check_facts: false`. Подробности — [verifier.md](verifier.md).
+
+**Внимание (`council_solve`):** тесты запускаются во временной копии `workdir` (исходная папка не меняется) в песочнице — очищенное окружение, лимиты, таймаут, без сети на Linux ([sandbox.md](sandbox.md)). Это не граница безопасности: используйте с доверенными моделями.
 
 Имена инструментов в клиентах получают префикс сервера: в OpenCode — `objection_council_review`, в Cline — `objection__council_review`.
 
