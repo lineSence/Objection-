@@ -1,0 +1,36 @@
+# Пример конфигурации Objection!
+# Пул моделей задаёт пользователь; его можно менять в любой момент.
+# Идентификаторы моделей — в формате LiteLLM (provider/model).
+
+models:
+  - id: gpt            # короткое имя для логов и статистики
+    model: openai/<your-model>
+  - id: claude
+    model: anthropic/<your-model>
+  - id: gemini
+    model: gemini/<your-model>
+  - id: local-qwen     # локальная модель (опционально)
+    model: ollama/<your-model>
+    api_base: http://localhost:11434
+    timeout_s: 180
+    max_parallel: 1
+
+defaults:
+  mode: auto            # auto | verify | code | review | deliberate | quick
+  council:
+    size: 3             # сколько моделей брать из пула (3–5 обычно достаточно)
+    selection: auto     # auto (по статистике Model Registry) | pinned
+    pinned: []          # например: [gpt, claude, gemini]
+  judge: auto           # модель из другого семейства, чем большинство совета
+  budget_usd: 0.50
+  timeout_s: 120
+  anonymize: true
+  max_critique_rounds: 1
+
+verifier:
+  web_search: true
+  python_sandbox: true
+  run_tests: true
+
+storage:
+  path: ~/.objection/runs.sqlite

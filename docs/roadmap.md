@@ -1,0 +1,24 @@
+# Roadmap
+
+- [ ] **M0 — каркас**
+  - Python-пакет `objection`, конфиг пула моделей, LiteLLM
+  - Параллельные независимые ответы, пресет `deliberate` (анализ + синтез)
+  - JSON/Markdown-вывод, Run Store (SQLite), Budget Manager, mock-провайдер, CLI
+  - `objection models list/check` — health check пула
+- [ ] **M1 — агентный цикл**
+  - MCP-сервер (stdio), инструменты `council_ask`, `council_review`, `council_models`
+  - Пресет `review`, verdict + exit code, кэш
+  - Проверенные инструкции подключения для OpenCode и Cline
+- [ ] **M2 — verify / code / quick**
+  - Пресеты `verify`, `code`, `quick`; Task Router
+  - Ранняя остановка, взвешенное голосование, анонимизация и перестановка
+  - `council_verify`, `council_solve`
+- [ ] **M3 — Verifier**
+  - Claim Ledger, веб-поиск, python-песочница, запуск тестов
+  - Защита от prompt injection в результатах инструментов
+- [ ] **M4 — измеримость**
+  - Eval Harness: baseline при равном бюджете, свой набор задач из Run Store
+  - Model Registry: статистика по моделям пула, корреляция ошибок, n_eff, автовыбор состава
+- [ ] **M5 — другие пользователи**
+  - HTTP API, Web UI (раунды, позиции, клеймы), BYO-ключи
+  - Публичные результаты eval
