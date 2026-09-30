@@ -1,0 +1,31 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"><style>
+body{display:flex;flex-direction:column;background:var(--s)}
+header{height:56px;display:flex;align-items:center;gap:16px;padding:0 24px;border-bottom:1px solid var(--b);background:var(--card)}
+.q{padding:20px 24px 16px;background:var(--card);border-bottom:1px solid var(--b)}
+.q .meta{display:flex;gap:8px;margin-top:8px;align-items:center}
+.arena{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:20px 24px}
+.col{display:flex;flex-direction:column;gap:12px;padding:16px;min-width:0}
+.col .hd{display:flex;align-items:center;gap:8px}
+.col .hd .n{font-weight:600}
+.pos{font-size:15px;font-weight:600;line-height:1.35}
+.obj{border-left:3px solid var(--r);background:var(--rS);padding:8px 10px;border-radius:0 6px 6px 0;font-size:13px}
+.obj b{color:var(--rT)}
+.sup{border-left:3px solid var(--g);background:var(--gS);padding:8px 10px;border-radius:0 6px 6px 0;font-size:13px}
+.r1{margin-top:auto;border-top:1px solid var(--b);padding-top:10px;font-size:12px;color:var(--t2)}.r1 b{color:var(--t);font-weight:600}
+.shift{font-size:12px;color:var(--t2);display:flex;gap:6px;align-items:center}
+.verdict{margin:0 24px 20px;padding:18px 20px;display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:24px}
+.verdict p{margin-top:6px}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--s2)}
+</style><script>var t=new URLSearchParams(location.search).get("theme");if(t)document.documentElement.dataset.theme=t</script></head><body>
+<header><span class="logo">Objection<b>!</b></span><span class="muted">Зал заседаний</span><span style="flex:1"></span><span class="tag b">deliberate</span><span class="muted">Раунд 2 из 2</span><button class="btn">Пул моделей</button><button class="btn p">Новое дело</button></header>
+<section class="q"><div class="lbl">Дело №128</div><h1 style="margin-top:4px">Хранить историю запусков в SQLite или сразу в PostgreSQL?</h1><div class="meta"><span class="tag n">4 модели</span><span class="tag n">бюджет $0.50</span><span class="muted">Контекст: однопользовательский режим, позже веб для других</span></div></section>
+<main class="arena">
+ <div class="col card"><div class="hd"><span class="av m1">A</span><span class="n">Модель A</span><span style="flex:1"></span><span class="tag g">SQLite</span></div><div class="pos">SQLite сейчас, миграция через слой хранения позже</div><div class="sup">Ноль инфраструктуры, файл в ~/.objection — идеально для CLI и MCP.</div><div class="shift"><span class="dot" style="background:var(--g)"></span>Позиция не менялась · уверенность 0.82</div><div class="r1"><b>Раунд 1</b> · SQLite. Аргумент: CLI и MCP работают без сервера.</div></div>
+ <div class="col card"><div class="hd"><span class="av m2">B</span><span class="n">Модель B</span><span style="flex:1"></span><span class="tag o">PostgreSQL</span></div><div class="pos">Сразу PostgreSQL — веб-режим неизбежен</div><div class="obj"><b>Objection! от C:</b> для одного пользователя это лишний сервис и docker в зависимостях.</div><div class="shift"><span class="dot" style="background:var(--g)"></span>Держит позицию · уверенность 0.61</div><div class="r1"><b>Раунд 1</b> · PostgreSQL. Аргумент: конкурентная запись из веба.</div></div>
+ <div class="col card"><div class="hd"><span class="av m3">C</span><span class="n">Модель C</span><span style="flex:1"></span><span class="tag g">SQLite</span></div><div class="pos">SQLite + WAL, абстракция через SQLAlchemy</div><div class="sup">Конкурентная запись из веба решается WAL-режимом до ~десятков пользователей.</div><div class="obj"><b>Objection! от B:</b> WAL не спасёт при нескольких воркерах на разных машинах.</div><div class="shift"><span class="dot" style="background:var(--g)"></span>Позиция не менялась · уверенность 0.77</div><div class="r1"><b>Раунд 1</b> · SQLite + WAL. Аргумент: хватит до десятков пользователей.</div></div>
+ <div class="col card"><div class="hd"><span class="av m4">D</span><span class="n">Модель D</span><span style="flex:1"></span><span class="tag g">SQLite</span></div><div class="pos">SQLite, но схему проектировать под Postgres</div><div class="shift"><span class="dot" style="background:var(--o)"></span>Сменила позицию в раунде 2 — довод: «ноль инфраструктуры» (A)</div><div class="sup">Избегать JSON-функций, специфичных для SQLite.</div><div class="r1"><b>Раунд 1</b> · PostgreSQL. Аргумент: не придётся мигрировать.</div></div>
+</main>
+<section class="verdict card"><div><div class="lbl">Решение совета</div><h2 style="margin-top:6px">SQLite за абстракцией хранения; PostgreSQL — опциональный бэкенд для веб-режима</h2><p class="muted">Меньшинство (B): при многопользовательском деплое переход на PostgreSQL обязателен — зафиксировано как условие.</p></div>
+<div><div class="lbl">Согласие</div><div style="font-size:28px;font-weight:700;margin-top:4px">3 / 4</div><div class="bar" style="margin-top:8px"><i style="width:75%"></i></div><div class="muted" style="margin-top:6px">уверенность 0.78 · n_eff 2.3</div></div>
+<div><div class="kv"><span class="muted">Проверено фактов</span><span><span class="tag g">4 подтв.</span> <span class="tag r">1 опроверг.</span></span></div><div class="kv"><span class="muted">Стоимость</span><span>$0.071</span></div><div class="kv"><span class="muted">Время</span><span>24 с</span></div><div class="kv"><span class="muted">Лог</span><span style="color:var(--blue)">run 7f3a…</span></div></div></section>
+</body></html>

@@ -1,0 +1,38 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"><style>
+header{height:48px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--b);font-size:13px}
+.wrap{display:grid;grid-template-columns:1fr 320px;gap:0;height:calc(100vh - 48px)}
+.doc{padding:32px 64px 24px 120px;overflow:hidden}
+.doc p{font-size:15px;line-height:1.65;margin-top:12px;max-width:720px}
+.ok{background:var(--gS);border-bottom:2px solid var(--g);padding:0 2px}
+.bad{background:var(--rS);border-bottom:2px solid var(--r);padding:0 2px}
+.dis{background:var(--oS);border-bottom:2px solid var(--o);padding:0 2px}
+.callout{display:flex;gap:12px;background:var(--s);border-radius:8px;padding:14px 16px;margin-top:18px;max-width:720px;font-size:14px}
+.meta{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.flow{margin-top:18px;max-width:720px;border:1px solid var(--b);border-radius:10px;padding:14px 16px}
+.fl{display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;align-items:center;font-size:13px;padding:5px 0}
+.pill{padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600}
+.margin{border-left:1px solid var(--b);padding:32px 20px;display:flex;flex-direction:column;gap:12px;background:var(--card);overflow:hidden}
+.cm{border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px}
+.cm .h{display:flex;gap:8px;align-items:center;font-weight:600;margin-bottom:4px}
+.q{font-size:12px;color:var(--t2);border-left:2px solid var(--b);padding-left:8px;margin-bottom:6px}
+</style><script>var t=new URLSearchParams(location.search).get("theme");if(t)document.documentElement.dataset.theme=t</script></head><body>
+<header><span class="logo" style="font-size:14px">Objection<b>!</b></span><span class="muted">Отчёты / SQLite или PostgreSQL?</span><span style="flex:1"></span><span class="tag g">подтверждено</span><span class="tag r">опровергнуто</span><span class="tag o">спорно</span><button class="btn" style="height:30px">Поделиться</button></header>
+<div class="wrap"><article class="doc">
+<h1 style="font-size:32px">SQLite или PostgreSQL для истории запусков</h1>
+<div class="meta"><span class="tag b">deliberate</span><span class="muted" style="font-size:13px">4 модели · 2 раунда · согласие 3/4 · $0.071 · 30 сентября 2026</span></div>
+<div class="callout"><span style="font-size:18px;font-weight:800;color:var(--r)">!</span><div><b>Вердикт.</b> SQLite за абстракцией хранения; PostgreSQL — опциональный бэкенд для многопользовательского веб-режима.</div></div>
+<h2 style="margin-top:24px">Обоснование</h2>
+<p>Для однопользовательского режима <span class="ok">SQLite не требует отдельного сервиса</span> и хранится одним файлом рядом с конфигом. <span class="ok">WAL-режим позволяет читать во время записи</span>, что закрывает сценарий WebUI + CLI одновременно.</p>
+<p>Утверждение, что <span class="bad">SQLite вообще не поддерживает конкурентную запись</span>, неверно: допускается один писатель одновременно с читателями. Однако <span class="dis">при нескольких воркерах на разных машинах</span> SQLite действительно становится узким местом.</p>
+<h2 style="margin-top:24px">Как менялись позиции</h2>
+<div class="flow"><div class="fl"><span></span><span class="lbl">Раунд 1</span><span class="lbl">Раунд 2</span></div>
+<div class="fl"><b>Модель A</b><span class="pill" style="background:var(--gS);color:var(--gT)">SQLite</span><span class="pill" style="background:var(--gS);color:var(--gT)">SQLite</span></div>
+<div class="fl"><b>Модель B</b><span class="pill" style="background:var(--oS);color:var(--oT)">PostgreSQL</span><span class="pill" style="background:var(--oS);color:var(--oT)">PostgreSQL · меньшинство</span></div>
+<div class="fl"><b>Модель D</b><span class="pill" style="background:var(--oS);color:var(--oT)">PostgreSQL</span><span class="pill" style="background:var(--gS);color:var(--gT)">SQLite · убедил довод A</span></div></div>
+</article>
+<aside class="margin"><div class="lbl">Комментарии совета · 4</div>
+<div class="cm"><div class="h"><span class="av m2" style="width:20px;height:20px;font-size:10px">B</span>Модель B <span class="tag o">особое мнение</span></div><div class="q">при нескольких воркерах…</div>Для публичного деплоя переход на PostgreSQL обязателен — прошу записать как условие.</div>
+<div class="cm"><div class="h"><span class="av m3" style="width:20px;height:20px;font-size:10px">C</span>Модель C <span class="tag r">Objection!</span></div><div class="q">вообще не поддерживает…</div>Опровергнуто документацией SQLite, раздел WAL.</div>
+<div class="cm"><div class="h"><span class="av m1" style="width:20px;height:20px;font-size:10px">A</span>Модель A</div><div class="q">одним файлом…</div>Путь по умолчанию: ~/.objection/runs.db</div>
+<div class="cm"><div class="h"><span class="av m5" style="width:20px;height:20px;font-size:10px">J</span>Судья</div>Уверенность 0.78; эффективных независимых голосов ≈ 2.3 из 4.</div>
+</aside></div></body></html>

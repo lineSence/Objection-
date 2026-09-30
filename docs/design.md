@@ -52,7 +52,7 @@
 ## 3. Архитектура
 
 ```
-Interfaces:  Python API │ CLI (JSON/Markdown, exit codes) │ MCP-сервер │ (позже) HTTP API + Web UI
+Interfaces:  Python API │ CLI (JSON/Markdown, exit codes) │ MCP-сервер │ Web UI (с M0, см. webui.md) │ (позже) HTTP API
                 │
 Task Router ──► Protocol Engine (пресеты, фазы, топология, остановка)
                 │

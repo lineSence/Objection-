@@ -6,5 +6,6 @@
 | [research.md](research.md) | Сводка исследований и существующих проектов, выводы для дизайна |
 | [decisions.md](decisions.md) | Журнал принятых решений (ADR-lite) |
 | [integrations.md](integrations.md) | Интеграция с агентами разработки: OpenCode, Cline (MCP) |
+| [webui.md](webui.md) | Web UI: экраны, темы, макеты |
 | [roadmap.md](roadmap.md) | Этапы разработки |
 | [../examples/objection.example.yaml](../examples/objection.example.yaml) | Пример конфигурации |

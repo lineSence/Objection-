@@ -21,7 +21,8 @@ Asking several models and letting them "debate until they agree" sounds great, b
 - Python library
 - CLI with JSON / Markdown output and CI-friendly exit codes
 - MCP server for agentic coding tools — first targets: **OpenCode** and **Cline**
-- Later: HTTP API and Web UI
+- Web UI from day one: runs dashboard, live run trace, debate and report views; light and dark themes
+- Later: HTTP API and multi-user mode
 
 ## Documentation (Russian)
 

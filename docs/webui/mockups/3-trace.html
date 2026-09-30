@@ -1,0 +1,49 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"><style>
+header{height:56px;display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--b)}
+.wrap{display:grid;grid-template-columns:1fr 400px;height:calc(100vh - 56px)}
+.main{padding:20px 28px;overflow:hidden}
+.sum{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:13px}
+.steps{margin-top:20px;position:relative}
+.st{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:start;padding:10px 0;position:relative}
+.st:before{content:"";position:absolute;left:13px;top:34px;bottom:-10px;width:2px;background:var(--b)}
+.st:last-child:before{display:none}
+.ic{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;position:relative;z-index:1}
+.ok{background:var(--g)}.run{background:var(--blue)}.wait{background:var(--card);border:2px solid var(--b);color:var(--t2)}
+.st .t{font-weight:600}.st .d{font-size:13px;color:var(--t2)}
+.sub{margin-top:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.sb{border:1px solid var(--b);border-radius:8px;padding:8px 10px;font-size:12px;background:var(--s)}
+.sb.sel{border-color:var(--blue);background:var(--blueS)}
+.tm{font-size:12px;color:var(--t2);white-space:nowrap}
+.side{border-left:1px solid var(--b);background:var(--s);padding:20px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+pre{font:12px/1.55 Menlo,Consolas,monospace;background:var(--card);border:1px solid var(--b);border-radius:8px;padding:12px;white-space:pre-wrap;color:var(--code)}
+.k{color:var(--bT)}.sv{color:var(--gT)}.nr{color:var(--oT)}
+</style><script>var t=new URLSearchParams(location.search).get("theme");if(t)document.documentElement.dataset.theme=t</script></head><body>
+<header><span class="logo">Objection<b>!</b></span><span class="muted">Запуски</span><span class="muted">/</span><span>run 7f3a91</span><span class="tag b">review</span><span class="tag n">источник: OpenCode</span><span style="flex:1"></span><button class="btn">Перезапустить</button><button class="btn">Экспорт JSON</button></header>
+<div class="wrap"><section class="main">
+<h1>Ревью diff: src/retry.py (+84 −12)</h1>
+<div class="sum"><span class="tag o">выполняется · 4 из 5</span><span class="muted">запущен агентом через MCP · 18 с · $0.043 из $0.30</span></div>
+<div class="steps">
+<div class="st"><span class="ic ok">1</span><div><div class="t">Независимые ревью</div><div class="d">4 модели параллельно, без доступа к ответам друг друга</div>
+<div class="sub"><div class="sb"><b>A</b> · 3 замечания</div><div class="sb"><b>B</b> · 5 замечаний</div><div class="sb"><b>C</b> · 2 замечания</div><div class="sb"><b>D</b> · таймаут, повтор ок</div></div></div><span class="tm">7.9 с</span></div>
+<div class="st"><span class="ic ok">2</span><div><div class="t">Анализ разногласий</div><div class="d">Сгруппировано в 6 утверждений: 3 общих, 2 спорных, 1 уникальное</div></div><span class="tm">2.1 с</span></div>
+<div class="st"><span class="ic ok">3</span><div><div class="t">Перекрёстная критика</div><div class="d">Разреженная топология: каждая модель видит 2 чужих ответа</div>
+<div class="sub"><div class="sb sel"><b>C → B</b> · Objection!</div><div class="sb"><b>A → D</b> · согласна</div><div class="sb"><b>B → A</b> · уточнение</div><div class="sb"><b>D → C</b> · согласна</div></div></div><span class="tm">5.6 с</span></div>
+<div class="st"><span class="ic run">4</span><div><div class="t">Проверка фактов</div><div class="d">Запуск тестов в песочнице · проверка сигнатуры httpx.Timeout</div><div class="bar" style="margin-top:8px;width:60%"><i style="width:55%"></i></div></div><span class="tm">2.4 с…</span></div>
+<div class="st"><span class="ic wait">5</span><div><div class="t" style="color:var(--t2)">Синтез вердикта</div><div class="d">Судья: claude-sonnet · JSON-схема verdict.v1</div></div><span class="tm">—</span></div>
+</div></section>
+<aside class="side"><div style="display:flex;align-items:center;gap:8px"><span class="av m3">C</span><b>Модель C → B</b><span class="tag r">Objection!</span></div>
+<div style="font-size:13px">Замечание B №4 «экспоненциальный backoff без jitter» неверно: jitter добавлен в строке 57 через <span class="mono">random.uniform</span>.</div>
+<div class="lbl">Структурированный вывод</div>
+<pre>{
+  <span class="k">"claim"</span>: <span class="sv">"no jitter in backoff"</span>,
+  <span class="k">"author"</span>: <span class="sv">"B"</span>,
+  <span class="k">"stance"</span>: <span class="nr">"refute"</span>,
+  <span class="k">"evidence"</span>: <span class="sv">"src/retry.py:57"</span>,
+  <span class="k">"confidence"</span>: 0.9
+}</pre>
+<div class="lbl">Промпт и токены</div>
+<div style="font-size:13px;display:flex;justify-content:space-between"><span class="muted">вход / выход</span><span>3 412 / 286</span></div>
+<div style="font-size:13px;display:flex;justify-content:space-between"><span class="muted">модель</span><span>gemini-pro via LiteLLM</span></div>
+<div style="font-size:13px;display:flex;justify-content:space-between"><span class="muted">стоимость</span><span>$0.006</span></div>
+<button class="btn" style="justify-content:center">Открыть полный промпт</button></aside></div>
+</body></html>

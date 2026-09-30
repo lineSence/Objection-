@@ -1,0 +1,58 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"><style>
+body{display:grid;grid-template-columns:240px 1fr 360px;height:100vh}
+aside.nav{background:var(--s);border-right:1px solid var(--b);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.ni{padding:6px 10px;border-radius:6px;font-size:13px;color:var(--t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ni.a{background:var(--s2);font-weight:600}
+.chat{display:flex;flex-direction:column;min-width:0}
+.th{height:56px;border-bottom:1px solid var(--b);display:flex;align-items:center;gap:10px;padding:0 24px}
+.msgs{flex:1;overflow:hidden;padding:20px 32px;display:flex;flex-direction:column;gap:16px}
+.u{align-self:flex-end;background:var(--s2);padding:10px 14px;border-radius:10px;max-width:70%}
+.m{display:flex;gap:12px}
+.m .body{flex:1;min-width:0}
+.m .who{font-size:13px;font-weight:600;display:flex;gap:8px;align-items:center}
+.m p{margin-top:4px}
+.grp{border:1px solid var(--b);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--s)}
+.final{border:1px solid var(--blue);border-radius:10px;padding:14px 16px;background:var(--card)}
+.hl{background:var(--gS);border-radius:3px;padding:0 2px}.hlr{background:var(--rS);border-radius:3px;padding:0 2px;text-decoration:line-through}
+.composer{margin:0 32px 20px;border:1px solid var(--b);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:8px}
+aside.insp{border-left:1px solid var(--b);padding:20px;display:flex;flex-direction:column;gap:18px;overflow:hidden}
+.row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:5px 0}
+.cl{font-size:13px;display:flex;gap:8px;align-items:flex-start;padding:4px 0}
+</style><script>var t=new URLSearchParams(location.search).get("theme");if(t)document.documentElement.dataset.theme=t</script></head><body>
+<aside class="nav"><div class="logo" style="padding:4px 10px 12px">Objection<b>!</b></div>
+<button class="btn p" style="margin-bottom:12px;justify-content:center">Новый вопрос</button>
+<div class="lbl" style="padding:4px 10px">Сегодня</div>
+<div class="ni a">SQLite или PostgreSQL?</div><div class="ni">Ревью PR #42 — retry-логика</div><div class="ni">Правда ли, что LiteLLM поддерживает…</div>
+<div class="lbl" style="padding:12px 10px 4px">Вчера</div>
+<div class="ni">Схема JSON-вывода вердикта</div><div class="ni">Выбор лицензии</div><div class="ni">Как считать n_eff</div>
+<span style="flex:1"></span><div class="ni muted">Пул моделей · 5 активны</div><div class="ni muted">Настройки</div><div style="padding:8px 10px 0"><div class="seg"><span>Авто</span><span class="on">Светлая</span><span>Тёмная</span></div></div></aside>
+<section class="chat">
+<div class="th"><h3>SQLite или PostgreSQL?</h3><span class="tag b">deliberate</span><span style="flex:1"></span><span class="muted" style="font-size:13px">4 модели · 2 раунда</span></div>
+<div class="msgs">
+<div class="u">Хранить историю запусков в SQLite или сразу в PostgreSQL? Сейчас пользуюсь один, позже веб для других.</div>
+<div class="grp"><div class="lbl">Раунд 1 · независимые ответы</div>
+<div class="m"><span class="av m1">A</span><div class="body"><div class="who">Модель A <span class="tag g">SQLite</span></div><p>Ноль инфраструктуры, файл в ~/.objection — идеально для CLI и MCP.</p></div></div>
+<div class="m"><span class="av m2">B</span><div class="body"><div class="who">Модель B <span class="tag o">PostgreSQL</span></div><p>Веб-режим неизбежен, лучше сразу нормальную СУБД.</p></div></div>
+<div class="muted" style="font-size:13px;padding-left:40px">+ ещё 2 ответа (C, D) · показать</div></div>
+<div class="grp"><div class="lbl">Раунд 2 · критика</div>
+<div class="m"><span class="av m3">C</span><div class="body"><div class="who">Модель C <span class="tag r">Objection! → B</span></div><p>Для одного пользователя PostgreSQL — лишний сервис и docker в зависимостях.</p></div></div>
+<div class="m"><span class="av m4">D</span><div class="body"><div class="who">Модель D <span class="tag o">сменила позицию</span></div><p>Согласна с A, но схему стоит проектировать переносимой.</p></div></div></div>
+<div class="final"><div class="who" style="display:flex;gap:8px;align-items:center;font-weight:600"><span class="logo" style="font-size:14px">Objection<b>!</b></span> Итог совета <span class="tag g">согласие 3/4</span></div>
+<p style="margin-top:8px">Используйте <span class="hl">SQLite в WAL-режиме</span> за слоем хранения (SQLAlchemy). <span class="hlr">SQLite не поддерживает конкурентную запись</span> — опровергнуто: WAL допускает параллельное чтение и одного писателя. PostgreSQL — опциональный бэкенд для веб-деплоя.</p></div>
+</div>
+<div class="composer"><span class="muted" style="flex:1">Спросите совет или вставьте diff…</span><span class="tag n">пресет: deliberate</span><button class="btn p">Отправить</button></div>
+</section>
+<aside class="insp">
+<div><div class="lbl">Согласие</div><div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><span style="font-size:28px;font-weight:700">3 / 4</span><span class="muted">n_eff 2.3</span></div><div class="bar" style="margin-top:8px"><i style="width:75%"></i></div></div>
+<div><div class="lbl">Спорные пункты</div><div class="cl"><span class="dot" style="background:var(--o);margin-top:7px"></span>Нужен ли PostgreSQL при деплое с несколькими воркерами</div></div>
+<div><div class="lbl">Проверка фактов</div>
+<div class="cl"><span class="tag g">подтв.</span>WAL позволяет читать во время записи</div>
+<div class="cl"><span class="tag g">подтв.</span>SQLAlchemy поддерживает оба бэкенда</div>
+<div class="cl"><span class="tag r">опроверг.</span>SQLite не умеет конкурентную запись</div></div>
+<div><div class="lbl">Модели</div>
+<div class="row"><span style="display:flex;gap:8px;align-items:center"><span class="av m1" style="width:20px;height:20px;font-size:10px">A</span>claude-sonnet</span><span class="muted">$0.021 · 6.1 с</span></div>
+<div class="row"><span style="display:flex;gap:8px;align-items:center"><span class="av m2" style="width:20px;height:20px;font-size:10px">B</span>gpt-5</span><span class="muted">$0.024 · 8.4 с</span></div>
+<div class="row"><span style="display:flex;gap:8px;align-items:center"><span class="av m3" style="width:20px;height:20px;font-size:10px">C</span>gemini-pro</span><span class="muted">$0.019 · 5.2 с</span></div>
+<div class="row"><span style="display:flex;gap:8px;align-items:center"><span class="av m4" style="width:20px;height:20px;font-size:10px">D</span>qwen3 (локально)</span><span class="muted">$0 · 11.9 с</span></div></div>
+<div style="border-top:1px solid var(--b);padding-top:12px"><div class="row"><span class="muted">Итого</span><b>$0.071 · 24 с</b></div><div class="row"><span class="muted">Экспорт</span><span style="color:var(--blue)">JSON · Markdown</span></div></div>
+</aside></body></html>

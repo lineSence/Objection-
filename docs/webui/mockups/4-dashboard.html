@@ -1,0 +1,47 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"><style>
+body{display:grid;grid-template-columns:220px 1fr;height:100vh}
+nav{background:var(--s);border-right:1px solid var(--b);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.ni{padding:6px 10px;border-radius:6px;font-size:13px}.ni.a{background:var(--s2);font-weight:600}
+main{padding:20px 24px;display:flex;flex-direction:column;gap:16px;overflow:hidden;background:var(--card)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi{padding:14px 16px}.kpi .v{font-size:24px;font-weight:700;margin-top:2px}.kpi .s{font-size:12px;color:var(--t2)}
+.grid{align-items:start;display:grid;grid-template-columns:1.7fr 1fr;gap:16px;flex:1;min-height:0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:12px;color:var(--t2);font-weight:600;padding:8px 12px;border-bottom:1px solid var(--b)}
+td{padding:9px 12px;border-bottom:1px solid var(--s2);white-space:nowrap}
+tr.sel td{background:var(--blueS)}
+.ch{padding:14px 16px}
+.mrow{display:grid;grid-template-columns:1fr 56px 84px;gap:8px;align-items:center;font-size:13px;padding:7px 0;border-bottom:1px solid var(--s2)}
+.spark{display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:10px}.spark i{flex:1;background:var(--blueS);border-radius:3px 3px 0 0}.spark i.h{background:var(--blue)}
+</style><script>var t=new URLSearchParams(location.search).get("theme");if(t)document.documentElement.dataset.theme=t</script></head><body>
+<nav><div class="logo" style="padding:4px 10px 12px">Objection<b>!</b></div>
+<div class="ni a">Обзор</div><div class="ni">Запуски</div><div class="ni">Пул моделей</div><div class="ni">Пресеты</div><div class="ni">Оценки (eval)</div><div class="ni">Интеграции</div>
+<span style="flex:1"></span><div class="ni muted">API-ключи</div><div class="ni muted">Настройки</div><div style="padding:8px 10px 0"><div class="seg"><span>Авто</span><span class="on">Светлая</span><span>Тёмная</span></div></div></nav>
+<main>
+<div style="display:flex;align-items:center;gap:12px"><h1>Обзор</h1><span class="tag n">последние 7 дней</span><span style="flex:1"></span><button class="btn">Добавить модель</button><button class="btn p">Новый запуск</button></div>
+<div class="kpis">
+<div class="card kpi"><div class="lbl">Запуски</div><div class="v">312</div><div class="s">OpenCode 61% · Cline 27% · Web 12%</div></div>
+<div class="card kpi"><div class="lbl">Расходы</div><div class="v">$8.41</div><div class="s">в среднем $0.027 за запуск</div></div>
+<div class="card kpi"><div class="lbl">Точность на eval</div><div class="v">86%</div><div class="s">+9 п.п. к лучшей одиночной модели</div></div>
+<div class="card kpi"><div class="lbl">Objection! принято</div><div class="v">41%</div><div class="s">возражений изменили вердикт</div></div></div>
+<div class="grid">
+<div class="card" style="overflow:hidden"><div style="display:flex;align-items:center;padding:12px 12px 4px"><h3>Последние запуски</h3><span style="flex:1"></span><span class="tag n">все источники</span></div>
+<table><tr><th>Запуск</th><th>Пресет</th><th>Источник</th><th>Согласие</th><th>Факты</th><th>Цена</th><th>Время</th></tr>
+<tr class="sel"><td>Ревью src/retry.py</td><td><span class="tag b">review</span></td><td>OpenCode</td><td><span class="tag o">2/4</span></td><td>3 · 1 опр.</td><td>$0.043</td><td>21 с</td></tr>
+<tr><td>SQLite или PostgreSQL?</td><td><span class="tag b">deliberate</span></td><td>Web</td><td><span class="tag g">3/4</span></td><td>4 · 1 опр.</td><td>$0.071</td><td>24 с</td></tr>
+<tr><td>Проверить: LiteLLM и Ollama</td><td><span class="tag b">verify</span></td><td>Cline</td><td><span class="tag g">4/4</span></td><td>2 · 0 опр.</td><td>$0.012</td><td>6 с</td></tr>
+<tr><td>Патч: миграция схемы</td><td><span class="tag b">code</span></td><td>OpenCode</td><td><span class="tag g">3/3</span></td><td>тесты ок</td><td>$0.058</td><td>41 с</td></tr>
+<tr><td>Формат JSON-вердикта</td><td><span class="tag b">quick</span></td><td>Web</td><td><span class="tag g">3/3</span></td><td>—</td><td>$0.004</td><td>3 с</td></tr>
+<tr><td>Ревью PR #39 — кэш</td><td><span class="tag b">review</span></td><td>Cline</td><td><span class="tag r">1/4</span></td><td>1 · 2 опр.</td><td>$0.047</td><td>19 с</td></tr>
+<tr><td>Выбор топологии критики</td><td><span class="tag b">deliberate</span></td><td>Web</td><td><span class="tag o">2/3</span></td><td>5 · 0 опр.</td><td>$0.066</td><td>28 с</td></tr>
+</table></div>
+<div style="display:flex;flex-direction:column;gap:16px;min-height:0">
+<div class="card ch"><div style="display:flex;align-items:center"><h3>Пул моделей</h3><span style="flex:1"></span><span class="muted" style="font-size:12px">задаётся вами</span></div>
+<div class="mrow"><span style="display:flex;gap:8px;align-items:center"><span class="dot" style="background:var(--g)"></span>claude-sonnet</span><span class="muted">1.9 с</span><span class="tag g">ок</span></div>
+<div class="mrow"><span style="display:flex;gap:8px;align-items:center"><span class="dot" style="background:var(--g)"></span>gpt-5</span><span class="muted">2.6 с</span><span class="tag g">ок</span></div>
+<div class="mrow"><span style="display:flex;gap:8px;align-items:center"><span class="dot" style="background:var(--o)"></span>gemini-pro</span><span class="muted">7.8 с</span><span class="tag o">медл.</span></div>
+<div class="mrow"><span style="display:flex;gap:8px;align-items:center"><span class="dot" style="background:var(--g)"></span>qwen3 · Ollama</span><span class="muted">4.1 с</span><span class="tag n">локал.</span></div>
+<div class="mrow" style="border:0"><span style="display:flex;gap:8px;align-items:center"><span class="dot" style="background:var(--r)"></span>deepseek</span><span class="muted">—</span><span class="tag r">нет ключа</span></div></div>
+<div class="card ch"><div style="display:flex;align-items:center"><h3>Расходы по дням</h3><span style="flex:1"></span><span class="muted" style="font-size:12px">лимит $2/день</span></div>
+<div class="spark"><i style="height:30%"></i><i style="height:55%"></i><i style="height:40%"></i><i style="height:80%"></i><i style="height:35%"></i><i style="height:60%"></i><i class="h" style="height:72%"></i></div></div>
+</div></div></main></body></html>
