@@ -47,6 +47,7 @@ if (-not $env:OBJECTION_CONFIG -and -not (Test-Path objection.yaml) -and -not (T
   Write-Host "  mkdir ~\.objection; copy examples\objection.example.yaml ~\.objection\config.yaml"
 }
 
-$cmdArgs = if ($args.Count -eq 0) { @("ui") } else { $args }
+# Plain assignment (not `$x = if …`): PowerShell would unroll a one-item array into a string, and splatting it passes single chars.
+if ($args.Count -eq 0) { $cmdArgs = @("ui") } else { $cmdArgs = @($args) }
 & $exe @cmdArgs
 exit $LASTEXITCODE
