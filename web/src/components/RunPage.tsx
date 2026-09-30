@@ -57,12 +57,18 @@ export default function RunPage(props: {
         <span className={`tag ${tone}`}>{label}</span>
         {run.cached && <span className="tag n" title="Тот же запрос уже отвечен — результат взят из кэша">из кэша</span>}
         {run.source !== "web" && <span className="tag n">источник: {run.source}</span>}
+        {(run.excluded_models?.length ?? 0) > 0 && (
+          <span className="tag o" title={run.excluded_models!.map((e) => `${e.id}: ${e.reason}`).join("\n")}>
+            исключены: {run.excluded_models!.map((e) => e.id).join(", ")}
+          </span>
+        )}
         <nav className="tabs" aria-label="Вид запуска">
           <button className={tab === "chat" ? "on" : ""} onClick={() => setTab("chat")}>Чат</button>
           <button className={tab === "debate" ? "on" : ""} onClick={() => setTab("debate")}>Спор</button>
           <button className={tab === "trace" ? "on" : ""} onClick={() => setTab("trace")}>Ход запуска</button>
           <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>Отчёт</button>
         </nav>
+        {state.finished && run.status === "done" && <LabelButtons run={run} onLabel={(r) => { setRun(r); onChanged(); }} />}
         <button className="btn sm danger" disabled={!state.finished && !state.failed} title={state.finished ? "Удалить запуск и его историю" : "Удалить можно после завершения"}
           onClick={async () => {
             if (!confirm("Удалить этот запуск вместе с ходом и результатом? Отменить нельзя.")) return;
@@ -79,5 +85,28 @@ export default function RunPage(props: {
         <TraceView run={view} auto={auto} state={state} events={events} />
       )}
     </>
+  );
+}
+
+/** Human judgement of the final answer: labelled runs become your own eval set (`objection eval run --suite mine`). */
+function LabelButtons({ run, onLabel }: { run: Run; onLabel: (r: Run) => void }) {
+  const [busy, setBusy] = useState(false);
+  const set = async (label: "correct" | "wrong" | null) => {
+    let expected: string | undefined;
+    if (label === "wrong" && run.mode !== "review" && run.mode !== "code") {
+      expected = prompt("Какой ответ правильный? (необязательно — поможет оценить каждую модель)") ?? undefined;
+    }
+    setBusy(true);
+    try { onLabel(await api.label(run.id, run.label === label ? null : label, expected)); }
+    catch (e) { alert(String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <span className="label-btns" title={run.expected ? `правильный ответ: ${run.expected}` : "Оценка итога: попадёт в ваш набор для eval"}>
+      <button className={`btn sm ${run.label === "correct" ? "on g" : ""}`} disabled={busy} aria-pressed={run.label === "correct"}
+        onClick={() => set("correct")}>👍 верно</button>
+      <button className={`btn sm ${run.label === "wrong" ? "on r" : ""}`} disabled={busy} aria-pressed={run.label === "wrong"}
+        onClick={() => set("wrong")}>👎 неверно</button>
+    </span>
   );
 }

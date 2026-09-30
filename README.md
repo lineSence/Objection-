@@ -2,7 +2,7 @@
 
 > A council of LLMs that answer independently, object to each other, verify claims with tools — and return one answer with honest disagreement.
 
-**Status:** M1. Works today: the `deliberate` preset (independent answers → anonymous cross-critique → synthesis), the `review` preset (independent reviews → dedupe → cross-check votes → `pass`/`fail`/`uncertain` verdict), an MCP server for OpenCode / Cline, result cache, CLI, run history in SQLite, and the Web UI (overview, chat, debate, run trace; light/dark themes). Design docs: [docs/](docs/).
+**Status:** M3 done, M4 in progress. Works today: five presets with an `auto` router — `deliberate` (independent answers → anonymous sparse critique → synthesis), `review` (independent reviews → dedupe → cross-check votes → `pass`/`fail`/`uncertain`), `verify` (weighted vote, early stop), `quick` (two models, escalate on disagreement), `code` (candidates judged by your tests); the Verifier (claims checked with SearXNG web search, a Python sandbox and your repository files — evidence outranks votes, also for review findings); health checks before every run, retries and fallbacks; per-model outcome statistics and answer labels; the **Eval Harness** (`objection eval run`: presets vs best single model, self-consistency and plain voting at equal budget); an MCP server for OpenCode / Cline; result cache; CLI; run history in SQLite; the Web UI (overview, chat, debate, trace, report; light/dark themes). Design docs: [docs/](docs/).
 
 ## Why
 
@@ -35,11 +35,12 @@ Without a config Objection! uses offline `mock/*` models, so you can try the UI 
 | `objection ask "…" [--mode auto\|deliberate\|verify\|quick] [--check/--no-check] [--json] [-m a,b,c] [--budget 0.2]` | Ask the council; `auto` (default) routes to the cheapest fitting protocol; claims in the answer are fact-checked via your SearXNG + python sandbox ([docs/verifier.md](docs/verifier.md)); exit code 1 on failure |
 | `objection verify "claim"` | Fact-check a claim by weighted vote; exit 0 confirmed, 1 refuted, 2 unverified, 3 error |
 | `objection solve "task" --tests "pytest -q" [--workdir .] [--file path] [--apply]` | Every model writes a solution, your tests pick the winner (tests run in a best-effort sandbox: temp copy, scrubbed env, rlimits, no network on Linux — not a security boundary); exit 0 pass, 1 fail |
-| `objection review [FILE\|-] [--diff REF] [--staged] [--kind diff\|plan\|file\|text] [--fail-on high] [--format json]` | Council code/plan review; exit 0 pass, 1 fail, 2 uncertain, 3 error |
+| `objection review [FILE\|-] [--diff REF] [--staged] [--kind diff\|plan\|file\|text] [--fail-on high] [--check] [--workdir .] [--format json]` | Council code/plan review; `--check` also verifies every finding against the repository files / Python / web (a refuted finding is rejected); exit 0 pass, 1 fail, 2 uncertain, 3 error |
+| `objection eval run [--suite math-mini\|code-mini\|mine\|file.jsonl] [--presets verify,quick] [--n 20]` | Measure presets against the best single model, self-consistency and plain voting **at equal budget** on your pool; `eval list` / `eval show <id>` ([docs/eval.md](docs/eval.md)); exit 0 every preset wins, 1 some preset does not |
 | `objection mcp` | MCP server over stdio (tools `council_ask`, `council_review`, `council_verify`, `council_solve`, `council_models`) — see [docs/integrations.md](docs/integrations.md) |
 | `objection ui [--port 6967]` | Local Web UI (binds to 127.0.0.1) |
-| `objection models list` / `check` | Show / health-check the pool |
-| `objection runs list` / `show <id>` / `delete <id…>` | Run history |
+| `objection models list` / `check` / `add <id> <litellm-model> [--fallback …]` / `remove <id>` | Show / health-check / edit the pool |
+| `objection runs list` / `show <id>` / `delete <id…>` / `label <id> correct\|wrong [--expected X]` / `reindex` | Run history; labels build your own eval set (`--suite mine`) |
 | `objection sandbox` | Show what the local sandbox can isolate on this machine ([docs/sandbox.md](docs/sandbox.md)) |
 
 ## Development
@@ -68,6 +69,7 @@ Backend: FastAPI inside the Python package (`src/objection`). Frontend: React + 
 - [Decisions log](docs/decisions.md)
 - [Installation (Russian)](docs/install.md)
 - [Agent integrations (OpenCode, Cline)](docs/integrations.md)
+- [Eval Harness](docs/eval.md)
 - [Roadmap](docs/roadmap.md)
 - [Example config](examples/objection.example.yaml)
 

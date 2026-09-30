@@ -42,7 +42,24 @@ async def run_review(engine: Engine, run: Run) -> Verdict:
         v = _verdict(run, findings, active, note=str(exc))
         v.verdict = "uncertain"
         return v
-    v = _verdict(run, findings, active)
+    claims = []
+    before: dict[str, str] = {}
+    if engine.should_check(run, "review") and not run.budget_exhausted:
+        from .verifier import check_findings
+
+        _vote_status(findings, active)
+        before = {f.id: f.status for f in findings}
+        claims = await check_findings(engine, run, findings, active)
+    else:
+        from .verifier import skip
+
+        skip(engine, run, "budget exhausted" if run.budget_exhausted else "fact-checking is off")
+    v = _verdict(run, findings, active, claims=claims)
+    v.claims = claims
+    if claims:
+        overturned = [f for f in findings if f.id in before and f.status != before[f.id]]
+        if overturned:
+            v.fact_override = "; ".join(f"{f.id} {before[f.id]} → {f.status} by evidence" for f in overturned)
     if run.budget_exhausted and v.verdict == "pass":  # some cross-checks were skipped: never a silent pass
         v.verdict = "uncertain"
         v.answer += " Note: budget exhausted, some cross-checks were skipped."
@@ -163,15 +180,37 @@ async def crosscheck(engine: Engine, run: Run, target: str, findings: list[Findi
     engine.emit(run, "phase_finished", phase=phase, data={"latency_s": round(time.perf_counter() - started, 2)})
 
 
-def _verdict(run: Run, findings: list[Finding], active: list[str], note: str | None = None) -> Verdict:
-    threshold = SEVERITY_ORDER[run.fail_on]
+EVIDENCE_JUDGE = "verifier"  # pseudo model id of the objection added when evidence refutes a finding
+
+
+def _vote_status(findings: list[Finding], active: list[str]) -> None:
     for f in findings:
-        refuters = {o.model_id for o in f.refuted_by}
+        refuters = {o.model_id for o in f.refuted_by if o.model_id != EVIDENCE_JUDGE}
         # A reporter counts as confirming unless it refuted the merged finding itself.
         f.confirmed_by = list(dict.fromkeys([m for m in f.reported_by if m not in refuters] + f.confirmed_by))
         c, r = len(f.confirmed_by), len(refuters)
         need = 1 if len(active) == 1 else 2
         f.status = "confirmed" if c > r and c >= need else "rejected" if r > c else "disputed"
+
+
+def _apply_evidence(f: Finding, claim_text: str | None = None) -> None:
+    """A checked fact outranks the votes (D-015): supported → confirmed, refuted → rejected."""
+    if f.evidence == "supported":
+        f.status = "confirmed"
+    elif f.evidence == "refuted":
+        f.status = "rejected"
+        if not any(o.model_id == EVIDENCE_JUDGE for o in f.refuted_by):
+            f.refuted_by.append(Objection(model_id=EVIDENCE_JUDGE, reason=claim_text or "refuted by evidence"))
+
+
+def _verdict(run: Run, findings: list[Finding], active: list[str], note: str | None = None,
+             claims: list | None = None) -> Verdict:
+    threshold = SEVERITY_ORDER[run.fail_on]
+    _vote_status(findings, active)
+    ev = {c.finding: c for c in claims or []}
+    for f in findings:
+        c = ev.get(f.id)
+        _apply_evidence(f, f"{c.text} — {c.evidence}" if c and c.evidence else None)
     findings.sort(key=lambda f: (-SEVERITY_ORDER[f.severity], {"confirmed": 0, "disputed": 1, "rejected": 2}[f.status]))
     blocking = [f for f in findings if f.status == "confirmed" and SEVERITY_ORDER[f.severity] >= threshold]
     unclear = [f for f in findings if f.status == "disputed" and SEVERITY_ORDER[f.severity] >= threshold]

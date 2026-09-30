@@ -15,6 +15,7 @@ from . import prompts
 from .engine import BudgetExceeded, Engine, parse_json
 from .sandbox import run_python
 from .schemas import Claim, Run, Verdict
+from . import repo as repo_search
 from .search import SearchError, searxng
 from .untrusted import suspicious, wrap
 from .voting import normalize
@@ -36,8 +37,10 @@ def _claims_from(data: dict[str, Any], limit: int, answer: str | None = None) ->
         quote = c.get("quote")
         quote = str(quote) if quote and answer and str(quote) in answer else None
         out.append((Claim(id=f"C{len(out) + 1}", text=str(c["text"])[:500], quote=quote,
-                         kind=str(c.get("kind") or "fact"), method=method if method in ("search", "python", "none") else "search",
+                         kind=str(c.get("kind") or "fact"),
+                         method=method if method in ("search", "python", "repo", "none") else "search",
                          query=(str(c["query"])[:300] if c.get("query") else None),
+                         path=(str(c["path"])[:300] if c.get("path") else None),
                          code=(str(c["code"])[:6000] if c.get("code") else None)), c))
     return out
 
@@ -58,7 +61,7 @@ async def check_answer(engine: Engine, run: Run, verdict: Verdict, answers: list
     answered = [a["model_id"] for a in answers]
     numbered = {str(i): a["model_id"] for i, a in enumerate(answers, 1)}
     user = prompts.CLAIM_EXTRACT_TEMPLATE.format(
-        question=run.question, answer=verdict.answer, max_claims=cfg.max_claims,
+        question=run.question, answer=verdict.answer, max_claims=cfg.max_claims, repository=_repo_note(engine, run),
         answers="\n\n".join(f"[{i}]\n{a.get('text', '')[:3000]}" for i, a in enumerate(answers, 1)))
     data = await _chair(engine, run, answered, prompts.CLAIM_EXTRACT, user)
     pairs = _claims_from(data or {}, cfg.max_claims, verdict.answer)
@@ -83,7 +86,7 @@ async def check_votes(engine: Engine, run: Run, t: dict[str, Any], n_answers: in
                                                           "candidates": len(groups)})
     answered = [m for g in groups for m in g["models"]]
     user = prompts.CLAIM_PLAN_TEMPLATE.format(
-        question=run.question, candidates="\n".join(f"[{i}] {g['answer']}" for i, g in enumerate(groups, 1)))
+        question=run.question, repository=_repo_note(engine, run), candidates="\n".join(f"[{i}] {g['answer']}" for i, g in enumerate(groups, 1)))
     data = await _chair(engine, run, answered, prompts.CLAIM_EXTRACT, user) or {}
     by_group: dict[int, Claim] = {}
     for c, raw in _claims_from(data, len(groups)):
@@ -105,6 +108,53 @@ async def check_votes(engine: Engine, run: Run, t: dict[str, Any], n_answers: in
     new_t, note = apply_evidence(t, claims, n_answers)
     _finish(engine, run, claims, started, override=note)
     return new_t, note, claims
+
+
+def _repo_note(engine: Engine, run: Run) -> str:
+    return prompts.REPOSITORY_NOTE if repo_available(engine, run) else ""
+
+
+async def check_findings(engine: Engine, run: Run, findings: list, active: list[str]) -> list[Claim]:
+    """review: one claim per finding (the finding is real ⇔ the claim holds); checked evidence outranks the votes.
+
+    Findings already rejected by the cross-check are not checked; the most severe ones go first.
+    """
+    from .schemas import SEVERITY_ORDER
+
+    cfg = engine.config.verifier
+    started = time.perf_counter()
+    todo = sorted([f for f in findings if f.status != "rejected"], key=lambda f: -SEVERITY_ORDER[f.severity])
+    todo = todo[: cfg.max_claims]
+    engine.emit(run, "phase_started", phase="check", data={"search": cfg.web_search, "python": cfg.python,
+                                                          "repo": repo_available(engine, run), "findings": len(todo)})
+    if not todo:
+        _finish(engine, run, [], started)
+        return []
+    listing = "\n".join(json.dumps({"id": f.id, "severity": f.severity, "title": f.title, "location": f.location,
+                                    "detail": f.detail[:600]}, ensure_ascii=False) for f in todo)
+    user = prompts.REVIEW_CLAIMS_TEMPLATE.format(kind=run.target_kind, findings=listing,
+                                                 repository=_repo_note(engine, run))
+    data = await _chair(engine, run, active, prompts.CLAIM_EXTRACT, user) or {}
+    by_id = {f.id: f for f in todo}
+    claims: list[Claim] = []
+    for c, raw in _claims_from(data, len(todo) * 2):
+        fid = str(raw.get("finding") or "")
+        if fid not in by_id or any(x.finding == fid for x in claims):
+            continue
+        f = by_id[fid]
+        c.finding, c.authors, c.in_answer = fid, list(f.reported_by), False
+        if c.method == "repo" and not c.path and f.location:
+            c.path = str(f.location)
+        claims.append(c)
+    for i, c in enumerate(claims, 1):
+        c.id = f"C{i}"
+    await check_all(engine, run, claims)
+    for c in claims:
+        f = by_id[c.finding or ""]
+        f.claim_id = c.id
+        f.evidence = c.status  # type: ignore[assignment]
+    _finish(engine, run, claims, started)
+    return claims
 
 
 def apply_evidence(t: dict[str, Any], claims: list[Claim], n_answers: int) -> tuple[dict[str, Any], str | None]:
@@ -159,8 +209,17 @@ async def check_all(engine: Engine, run: Run, claims: list[Claim]) -> None:
     await asyncio.gather(*(one(c) for c in claims))
 
 
+def repo_available(engine: Engine, run: Run) -> bool:
+    return bool(engine.config.verifier.repo and run.workdir)
+
+
 async def check_one(engine: Engine, run: Run, c: Claim) -> None:
     cfg = engine.config.verifier
+    if c.method == "repo":
+        if repo_available(engine, run):
+            await _repo(engine, run, c)
+            return
+        c.method = "search"  # no repository for this run: the web is the next best source
     if c.method == "python" and cfg.python and c.code:
         await _python(engine, run, c)
         if c.status != "unverified" or not cfg.web_search:
@@ -218,9 +277,35 @@ async def _search(engine: Engine, run: Run, c: Claim) -> None:
         c.evidence = "no search results"
         return
     evidence = "\n".join(f"[{i}] {wrap(r['title'] + ' — ' + r['snippet'], r['url'], 900)}" for i, r in enumerate(results, 1))
+    await _judge(engine, run, c, results, evidence)
+
+
+async def _repo(engine: Engine, run: Run, c: Claim) -> None:
+    cfg = engine.config.verifier
+    query = c.query or c.text
+    started = time.perf_counter()
+    results = await asyncio.to_thread(repo_search.search, run.workdir, query, cfg.repo_results, c.path)
+    public = [{k: r[k] for k in ("title", "url", "snippet", "path", "line")} for r in results]
+    c.sources = public
+    c.flagged = any(suspicious(r["snippet"]) for r in results)
+    engine.emit(run, "tool_call", phase="check", data={
+        "tool": "repo", "claim": c.id, "input": query, "path": c.path, "ok": True, "results": public,
+        "flagged": c.flagged, "duration_s": round(time.perf_counter() - started, 2)})
+    if not results:
+        c.evidence = "nothing in the repository matches"
+        return
+    evidence = "\n".join(f"[{i}] {wrap(r['snippet'], r['title'], 1500)}" for i, r in enumerate(results, 1))
+    await _judge(engine, run, c, public, evidence)
+
+
+async def _judge(engine: Engine, run: Run, c: Claim, results: list[dict[str, Any]], evidence: str) -> None:
+    cfg = engine.config.verifier
     user = prompts.CLAIM_JUDGE_TEMPLATE.format(claim=c.text, evidence=evidence)
-    # Judges: prefer council members that did not assert the claim (independence), cheapest-first order otherwise.
-    pool = [m for m in run.models if m not in c.authors] + [m for m in run.models if m in c.authors]
+    # Judges: prefer council members that did not assert the claim (independence), then another family.
+    fam = {m: engine.config.model(m).family_name for m in run.models}
+    author_fams = {fam[m] for m in c.authors if m in fam}
+    pool = sorted([m for m in run.models if m not in c.authors], key=lambda m: fam[m] in author_fams) \
+        + [m for m in run.models if m in c.authors]
     judges = pool[: cfg.judges]
 
     async def judge(model_id: str) -> tuple[str, dict[str, Any]] | None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -24,16 +25,46 @@ class ModelSpec(BaseModel):
     weight: float = Field(default=1.0, ge=0, le=10)  # vote weight in verify/quick
     price_in: float | None = Field(default=None, ge=0)  # USD per 1M input tokens; overrides LiteLLM pricing
     price_out: float | None = Field(default=None, ge=0)  # USD per 1M output tokens
+    family: str | None = None  # model family (openai, anthropic, google, …); default: inferred from `model`
+    fallbacks: list[str] = Field(default_factory=list)  # LiteLLM model strings tried when this one keeps failing
 
     @property
     def provider(self) -> str:
         return self.model.split("/", 1)[0]
 
     @property
+    def family_name(self) -> str:
+        """Explicit `family` wins; otherwise inferred from the model name (see `infer_family`)."""
+        return (self.family or infer_family(self.model)).lower()
+
+    @property
     def is_local(self) -> bool:
         return self.model.split("/", 1)[0] in {"ollama", "ollama_chat", "lm_studio", "hosted_vllm"} or (
             self.api_base is not None and ("localhost" in self.api_base or "127.0.0.1" in self.api_base)
         )
+
+
+_FAMILIES = [  # substring of the model name (after the provider prefix) → family; first match wins
+    (("claude",), "anthropic"), (("gpt", "o1", "o3", "o4", "chatgpt", "davinci"), "openai"),
+    (("gemini", "gemma", "palm"), "google"), (("llama", "codellama"), "meta"), (("qwen", "qwq"), "alibaba"),
+    (("mistral", "mixtral", "codestral", "ministral", "magistral", "devstral", "pixtral"), "mistral"),
+    (("deepseek",), "deepseek"), (("grok",), "xai"), (("phi",), "microsoft"),
+    (("command",), "cohere"), (("kimi", "moonshot"), "moonshot"), (("glm", "chatglm"), "zhipu"),
+    (("yi",), "01ai"), (("nemotron",), "nvidia"), (("granite",), "ibm"), (("jamba",), "ai21"),
+]
+_PROVIDER_FAMILY = {"openai": "openai", "anthropic": "anthropic", "gemini": "google", "vertex_ai": "google",
+                    "mistral": "mistral", "deepseek": "deepseek", "xai": "xai", "cohere": "cohere", "mock": "mock"}
+
+
+def infer_family(model: str) -> str:
+    """Family of a LiteLLM model string: by the model name first (works through routers such as OpenRouter or a
+    local server), then by the provider prefix, else the provider itself."""
+    provider, _, name = model.partition("/")
+    tokens = [t for t in re.split(r"[-._:/@ ]+", name.lower()) if t]
+    for keys, fam in _FAMILIES:
+        if any(t.startswith(k) for t in tokens for k in keys):
+            return fam
+    return _PROVIDER_FAMILY.get(provider.lower(), provider.lower() or "unknown")
 
 
 class CouncilDefaults(BaseModel):
@@ -50,6 +81,11 @@ class Defaults(BaseModel):
     timeout_s: float = 120
     anonymize: bool = True
     max_critique_rounds: int = 1
+    preflight: bool = True  # health-check the council before a run; unavailable models are excluded
+    health_ttl_s: float = Field(default=300, ge=0)  # reuse a health check result for this long
+    retries: int = Field(default=2, ge=0, le=6)  # retries on rate limits / 5xx / connection errors
+    retry_backoff_s: float = Field(default=1.0, ge=0)  # first pause; doubles every retry
+    respect_eval: bool = True  # auto mode avoids presets that lost to a baseline in the latest eval of this pool
 
 
 class VerifierConfig(BaseModel):
@@ -63,6 +99,8 @@ class VerifierConfig(BaseModel):
     max_claims: int = Field(default=5, ge=1, le=12)
     judges: int = Field(default=2, ge=1, le=5)  # models that judge each claim against the evidence
     revise: bool = True  # re-synthesise the answer when a claim in it was refuted
+    repo: bool = True  # repository files (the run's workdir) as evidence
+    repo_results: int = Field(default=6, ge=1, le=20)  # code snippets passed to the judges
 
 
 class SandboxConfig(BaseModel):

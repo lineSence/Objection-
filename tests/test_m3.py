@@ -40,6 +40,7 @@ def test_sandbox_scrubs_env_and_marks_nesting(tmp_path, monkeypatch):
     assert '"OBJECTION_NESTED"' in r["output"] and "OPENAI_API_KEY" not in r["output"]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="uses sh job control")
 def test_sandbox_timeout_kills_process_group(tmp_path):
     r = sandbox.run("sleep 30 & sleep 30; echo never", tmp_path, SandboxConfig(timeout_s=1))
     assert r["timed_out"] and r["exit_code"] == -1 and r["duration_s"] < 10

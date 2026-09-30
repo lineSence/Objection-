@@ -216,7 +216,9 @@ CLAIM_EXTRACT = (
     "Skip opinions, advice and trade-offs. Prefer the claims the answer depends on. For each claim choose how to check "
     "it: `python` for anything computable (write a short self-contained script, standard library only, no network, "
     "that prints ONE JSON line {\"holds\": true|false, \"value\": ...}), `search` for facts about the world (write a "
-    "short web search query), `none` if neither can check it. Reply with a single JSON object only."
+    "short web search query), `repo` for statements about the user's own project files when REPOSITORY is available "
+    "(give `query` = identifiers or exact strings to grep, `path` = the file if known), `none` if nothing can check "
+    "it. Reply with a single JSON object only."
 )
 
 CLAIM_EXTRACT_TEMPLATE = """QUESTION:
@@ -228,7 +230,8 @@ FINAL_ANSWER:
 MEMBER_ANSWERS:
 {answers}
 
-Return JSON: {{"claims": [{{"text": standalone claim in the language of the question, "quote": exact substring of FINAL_ANSWER that states it or null, "kind": "fact"|"number"|"code"|"citation", "method": "search"|"python"|"none", "query": search query or null, "code": python script or null, "answers": [numbers of MEMBER_ANSWERS that assert it]}}]}}
+{repository}
+Return JSON: {{"claims": [{{"text": standalone claim in the language of the question, "quote": exact substring of FINAL_ANSWER that states it or null, "kind": "fact"|"number"|"code"|"citation", "method": "search"|"python"|"repo"|"none", "query": search query / grep terms or null, "path": file for repo claims or null, "code": python script or null, "answers": [numbers of MEMBER_ANSWERS that assert it]}}]}}
 At most {max_claims} claims.
 """
 
@@ -239,8 +242,24 @@ CANDIDATE_ANSWERS:
 {candidates}
 
 For EVERY candidate write one claim "the answer to the question is <candidate>" and how to check it.
-Return JSON: {{"claims": [{{"candidate": candidate number, "text": the claim, "kind": "fact"|"number", "method": "search"|"python"|"none", "query": search query or null, "code": python script or null}}]}}
+{repository}
+Return JSON: {{"claims": [{{"candidate": candidate number, "text": the claim, "kind": "fact"|"number", "method": "search"|"python"|"repo"|"none", "query": search query / grep terms or null, "path": file for repo claims or null, "code": python script or null}}]}}
 """
+
+REVIEW_CLAIMS_TEMPLATE = """MATERIAL_TYPE: {kind}
+
+FINDINGS_TO_CHECK:
+{findings}
+{repository}
+For EVERY finding write one checkable claim that is TRUE exactly when the finding is a real problem (e.g. "function
+parse_config in src/config.py does not catch yaml.YAMLError"), and how to check it: `repo` (grep terms + file) for
+statements about the project's code, `python` for computable behaviour of the language or the standard library,
+`search` for documented behaviour of external libraries or APIs, `none` if it is a matter of judgement.
+Return JSON: {{"claims": [{{"finding": finding id, "text": the claim, "kind": "code"|"fact", "method": "repo"|"python"|"search"|"none", "query": grep terms or search query or null, "path": file or null, "code": python script or null}}]}}
+"""
+
+REPOSITORY_NOTE = ("\nREPOSITORY: the user's project is available — prefer `repo` for claims about its files, "
+                   "functions, defaults and configuration.\n")
 
 CLAIM_JUDGE = (
     "ROLE: claim-judge\n"

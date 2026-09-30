@@ -24,6 +24,7 @@ class ProviderError(RuntimeError):
 
 
 _semaphores: dict[str, asyncio.Semaphore] = {}
+_FLAKY: dict[str, int] = {}
 _RESERVED = {"model", "messages", "timeout", "api_base", "api_key", "response_format", "stream"}
 
 
@@ -64,25 +65,67 @@ def estimate_cost(spec: ModelSpec, prompt: str, output_tokens: int = EST_OUTPUT_
         return 0.0
 
 
-async def complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, json_mode: bool = False) -> Completion:
+class TransientError(ProviderError):
+    """Rate limit, 5xx or a dropped connection: worth retrying after a pause."""
+
+
+_TRANSIENT_NAMES = {"RateLimitError", "APIConnectionError", "ServiceUnavailableError", "InternalServerError",
+                    "BadGatewayError", "OverloadedError"}
+
+
+def is_transient(exc: BaseException) -> bool:
+    if isinstance(exc, TransientError):
+        return True
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and (status in (409, 429) or status >= 500):
+        return True
+    return type(exc).__name__ in _TRANSIENT_NAMES
+
+
+async def complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, json_mode: bool = False,
+                   retries: int = 0, backoff_s: float = 1.0) -> Completion:
+    """Call `spec.model`; on transient errors retry with exponential backoff, then try `spec.fallbacks` in order.
+
+    Timeouts are not retried (they would multiply the latency) but do move on to the next fallback.
+    `usage.served_by` names the fallback that answered, if any.
+    """
     sem = _limit(spec)
-    if sem is None:
-        return await _complete(spec, messages, timeout_s=timeout_s, json_mode=json_mode)
-    async with sem:
-        return await _complete(spec, messages, timeout_s=timeout_s, json_mode=json_mode)
+    targets = [spec.model] + [f for f in spec.fallbacks if f and f != spec.model]
+    last: ProviderError | None = None
+    for i, target in enumerate(targets):
+        for attempt in range(retries + 1):
+            try:
+                if sem is None:
+                    c = await _complete(spec, target, messages, timeout_s=timeout_s, json_mode=json_mode)
+                else:
+                    async with sem:
+                        c = await _complete(spec, target, messages, timeout_s=timeout_s, json_mode=json_mode)
+            except ProviderError as exc:
+                last = exc
+                if isinstance(exc, TransientError) and attempt < retries:
+                    await asyncio.sleep(backoff_s * (2 ** attempt))
+                    continue
+                break
+            if i:
+                c.usage.served_by = target
+            return c
+    assert last is not None
+    if len(targets) > 1:
+        raise ProviderError(f"{last} (fallbacks tried: {', '.join(targets[1:])})")
+    raise last
 
 
-async def _complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, json_mode: bool) -> Completion:
+async def _complete(spec: ModelSpec, target: str, messages: list[dict], *, timeout_s: float, json_mode: bool) -> Completion:
     timeout = spec.timeout_s or timeout_s
-    if spec.model.startswith("mock/"):
-        return await _mock(spec, messages)
+    if target.startswith("mock/"):
+        return await _mock(spec.model_copy(update={"model": target}), messages)
     import litellm  # imported lazily: heavy import
 
     litellm.suppress_debug_info = True
     litellm.drop_params = True  # e.g. response_format on providers that don't support it
     started = time.perf_counter()
     kwargs: dict = {k: v for k, v in spec.params.items() if k not in _RESERVED}
-    kwargs.update(model=spec.model, messages=messages, timeout=timeout)
+    kwargs.update(model=target, messages=messages, timeout=timeout)
     if spec.api_base:
         kwargs["api_base"] = spec.api_base
     if spec.api_key_env:
@@ -98,7 +141,8 @@ async def _complete(spec: ModelSpec, messages: list[dict], *, timeout_s: float, 
         msg = str(exc).replace("\n", " ")
         if len(msg) > 600:
             msg = msg[:600] + "…"
-        raise ProviderError(f"{spec.id}: {type(exc).__name__}: {msg}") from exc
+        err = TransientError if is_transient(exc) else ProviderError
+        raise err(f"{spec.id}: {type(exc).__name__}: {msg}") from exc
     text = resp.choices[0].message.content or ""
     usage = getattr(resp, "usage", None)
     in_tok = getattr(usage, "prompt_tokens", 0) or 0
@@ -128,6 +172,12 @@ async def _mock(spec: ModelSpec, messages: list[dict]) -> Completion:
     kind = spec.model.split("/", 1)[1]
     if kind == "fail":
         raise ProviderError(f"{spec.id}: mock failure")
+    if kind == "flaky":  # every other call fails with a retryable error
+        _FLAKY[spec.id] = _FLAKY.get(spec.id, 0) + 1
+        if _FLAKY[spec.id] % 2:
+            raise TransientError(f"{spec.id}: mock rate limit (429)")
+    if kind == "down":  # always a retryable error (tests fallbacks)
+        raise TransientError(f"{spec.id}: mock 503")
     await asyncio.sleep(1.5 if kind == "slow" else 0.05)
     system = messages[0]["content"] if len(messages) > 1 else ""
     prompt = messages[-1]["content"]
@@ -245,7 +295,20 @@ def _mock_code_judge(model_id: str, prompt: str, h: int) -> str:
 
 
 def _mock_claims(model_id: str, prompt: str, h: int) -> str:
-    """Two claims from the final answer (one searched, one computed); one claim per candidate for vote plans."""
+    """Two claims from the final answer (one searched, one computed); one claim per candidate for vote plans;
+    one repo claim per review finding (grep terms = the finding title)."""
+    if "FINDINGS_TO_CHECK:" in prompt:
+        block = prompt.split("FINDINGS_TO_CHECK:", 1)[1].split("\nFor EVERY finding", 1)[0]
+        claims = []
+        for ln in block.strip().splitlines():
+            if not ln.strip().startswith("{"):
+                continue
+            f = json.loads(ln)
+            repo = "REPOSITORY:" in prompt
+            claims.append({"finding": f["id"], "text": f"проблема реальна: {f['title']}", "kind": "code",
+                           "method": "repo" if repo else "none", "query": f'"{f["title"]}"',
+                           "path": (f.get("location") or "").split(":", 1)[0] or None})
+        return json.dumps({"claims": claims}, ensure_ascii=False)
     if "CANDIDATE_ANSWERS:" in prompt:
         cands = [ln.split("] ", 1)[1] for ln in prompt.split("CANDIDATE_ANSWERS:", 1)[1].split("\n\nFor EVERY", 1)[0]
                  .strip().splitlines() if "] " in ln]
@@ -289,10 +352,12 @@ _MOCK_ROLES = {
 }
 
 
-async def probe(spec: ModelSpec, timeout_s: float = 30) -> tuple[bool, str, float, Completion | None]:
+async def probe(spec: ModelSpec, timeout_s: float = 30, retries: int = 0,
+                backoff_s: float = 1.0) -> tuple[bool, str, float, Completion | None]:
     started = time.perf_counter()
     try:
-        c = await complete(spec, [{"role": "user", "content": "Reply with: ok"}], timeout_s=timeout_s)
+        c = await complete(spec, [{"role": "user", "content": "Reply with: ok"}], timeout_s=timeout_s,
+                           retries=retries, backoff_s=backoff_s)
     except ProviderError as exc:
         return False, str(exc), time.perf_counter() - started, None
     return True, "ok", time.perf_counter() - started, c

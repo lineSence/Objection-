@@ -1,5 +1,5 @@
 import type { Finding, Run } from "../api";
-import { FSTATUS, RVERDICT, SEVERITY, avatarClass, letter } from "../model";
+import { CLAIM, FSTATUS, RVERDICT, SEVERITY, avatarClass, letter } from "../model";
 
 export function VerdictBanner({ run }: { run: Run }) {
   const v = run.verdict;
@@ -27,6 +27,13 @@ export function FindingCard({ run, f }: { run: Run; f: Finding }) {
         <b className="muted">{f.id}</b>
         <span className={`tag ${st}`}>{sl}</span>
         <span className={`tag ${ft}`}>{fl}</span>
+        {f.evidence && (
+          <a className={`tag ${CLAIM[f.evidence]?.[0] ?? "n"}`} href={f.claim_id ? `#claim-${f.claim_id}` : undefined}
+            title="Фактчек находки: доказательство главнее голосов"
+            onClick={(e) => { if (f.claim_id) { e.preventDefault(); document.getElementById(`claim-${f.claim_id}`)?.scrollIntoView({ behavior: "smooth" }); } }}>
+            факт: {CLAIM[f.evidence]?.[1] ?? f.evidence}
+          </a>
+        )}
         <b>{f.title}</b>
       </div>
       {f.location && <div className="loc">{f.location}</div>}

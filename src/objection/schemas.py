@@ -50,7 +50,7 @@ class RunRequest(BaseModel):
     no_cache: bool = False
     # code mode
     tests_cmd: str | None = None  # shell command that must pass, e.g. "pytest -q"
-    workdir: str | None = None  # project directory copied into a temp dir for every candidate
+    workdir: str | None = None  # code: copied into a temp dir per candidate; review/ask: repository used as evidence
     solution_path: str | None = None  # file the solution is written to, relative to workdir
     check_facts: bool | None = None  # None → config verifier.enabled / verifier.modes
 
@@ -60,6 +60,7 @@ class Usage(BaseModel):
     output_tokens: int = 0
     cost_usd: float = 0.0
     latency_s: float = 0.0
+    served_by: str | None = None  # a fallback model string answered instead of the configured one
 
 
 class Event(BaseModel):
@@ -88,6 +89,8 @@ class Finding(BaseModel):
     confirmed_by: list[str] = Field(default_factory=list)
     refuted_by: list[Objection] = Field(default_factory=list)
     status: Literal["confirmed", "disputed", "rejected"] = "disputed"
+    claim_id: str | None = None  # M3.1: the Claim Ledger entry that fact-checked this finding
+    evidence: Literal["supported", "refuted", "unverified"] | None = None  # its status; overrides the votes
 
 
 ClaimStatus = Literal["supported", "refuted", "unverified"]
@@ -99,11 +102,13 @@ class Claim(BaseModel):
     text: str
     quote: str | None = None  # exact span of the final answer to highlight
     kind: str = "fact"  # fact | number | code | citation
-    method: str = "search"  # search | python | none
+    method: str = "search"  # search | python | repo | none
     query: str | None = None
+    path: str | None = None  # repo: file (or part of a path) the claim is about
     code: str | None = None
     authors: list[str] = Field(default_factory=list)  # council members that asserted it
     in_answer: bool = True
+    finding: str | None = None  # review: id of the finding this claim checks
     status: ClaimStatus = "unverified"
     evidence: str | None = None
     sources: list[dict[str, Any]] = Field(default_factory=list)  # [{title, url, snippet}]
@@ -162,3 +167,11 @@ class Run(BaseModel):
     error: str | None = None
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
+    # M3.1
+    pinned: bool = False  # the council was given explicitly (never refilled after preflight)
+    excluded_models: list[dict[str, str]] = Field(default_factory=list)  # [{id, reason}] — failed the preflight check
+    cache_key: str | None = None  # computed once for the requested council (preflight may shrink `models`)
+    label: Literal["correct", "wrong"] | None = None  # human (or eval) judgement of the final answer
+    expected: str | None = None  # the correct answer, when known (grades every model, not only the verdict)
+    label_note: str | None = None
+    labeled_at: datetime | None = None

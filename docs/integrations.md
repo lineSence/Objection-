@@ -10,8 +10,8 @@ Objection! подключается к агентам как **MCP-сервер*
 
 | Инструмент | Вход | Выход | Когда агенту вызывать |
 | --- | --- | --- | --- |
-| `council_ask` | `question`, `context?`, `mode?` (`auto` по умолч. / `deliberate` / `verify` / `quick`), `models?`, `budget_usd?`, `no_cache?`, `check_facts?` | `answer`, `confidence`, `agreement`, `disputed`, `minority_report`; для `verify`/`quick` — `votes`, `stopped_early`, `escalated_to`; `routed` — куда отправил авто-режим; фактчек — `claims[]`, `revised`, `fact_override` | архитектурное решение, выбор подхода, «второе мнение», короткий фактический вопрос |
-| `council_review` | `target` (дифф / план / файл / текст), `kind`, `instructions?`, `context?`, `fail_on?` (по умолч. `high`), `models?`, `budget_usd?`, `no_cache?` | `verdict` (`pass` / `fail` / `uncertain`), `findings[]` с `severity`, `status`, голосами | перед коммитом / PR, перед реализацией плана |
+| `council_ask` | `question`, `context?`, `mode?` (`auto` по умолч. / `deliberate` / `verify` / `quick`), `models?`, `budget_usd?`, `no_cache?`, `check_facts?`, `workdir?` (файлы проекта как доказательства) | `answer`, `confidence`, `agreement`, `disputed`, `minority_report`; для `verify`/`quick` — `votes`, `stopped_early`, `escalated_to`; `routed` — куда отправил авто-режим; фактчек — `claims[]`, `revised`, `fact_override` | архитектурное решение, выбор подхода, «второе мнение», короткий фактический вопрос |
+| `council_review` | `target` (дифф / план / файл / текст), `kind`, `instructions?`, `context?`, `fail_on?` (по умолч. `high`), `models?`, `budget_usd?`, `no_cache?`, `check_facts?`, `workdir?` | `verdict` (`pass` / `fail` / `uncertain`), `findings[]` с `severity`, `status`, голосами и `evidence` (итог фактчека находки); `claims[]` | перед коммитом / PR, перед реализацией плана |
 | `council_models` | `check?` | пул моделей и (если `check`) их доступность | диагностика |
 | `council_verify` | `claim`, `context?`, `models?`, `budget_usd?`, `no_cache?`, `check_facts?` | `status` (`confirmed` / `refuted` / `unverified`), `votes`, `agreement`, `minority_report`, `stopped_early` | проверить факт перед тем, как на него опереться: поведение API, версия, число |
 | `council_solve` | `task`, `tests_cmd?`, `workdir?`, `solution_path?`, `context?`, `models?`, `budget_usd?` | `verdict` (`pass` / `fail` / `uncertain`), `solution` {`filename`, `code`, `model_id`, `passed`}, `candidates[]` | несколько независимых решений, победителя выбирают ваши тесты; агент сам применяет `solution.code` |
@@ -22,7 +22,9 @@ Objection! подключается к агентам как **MCP-сервер*
 
 Имена инструментов в клиентах получают префикс сервера: в OpenCode — `objection_council_review`, в Cline — `objection__council_review`.
 
-Как считается `verdict` в `council_review`: находка **подтверждена**, если за неё ≥ 2 голосов и подтверждений больше, чем опровержений; **спорна**, если голоса разделились; **отклонена** — иначе. `fail` — есть подтверждённая находка с серьёзностью ≥ `fail_on`; `uncertain` — есть только спорные находки такого уровня или бюджет кончился посреди ревью; иначе `pass`. Вердикт считает код, а не модель.
+Как считается `verdict` в `council_review`: находка **подтверждена**, если за неё ≥ 2 голосов и подтверждений больше, чем опровержений; **спорна**, если голоса разделились; **отклонена** — иначе. `fail` — есть подтверждённая находка с серьёзностью ≥ `fail_on`; `uncertain` — есть только спорные находки такого уровня или бюджет кончился посреди ревью; иначе `pass`. Вердикт считает код, а не модель. С `check_facts=true` и `workdir` каждая находка ещё проверяется по файлам репозитория / Python / поиску: опровергнутая отклоняется, подтверждённая — подтверждается, даже вопреки голосам (`fact_override` называет такие находки).
+
+Во всех ответах: `excluded_models` — модели, не прошедшие проверку доступности перед запуском (совет из конфига добирается из пула).
 
 ## OpenCode
 

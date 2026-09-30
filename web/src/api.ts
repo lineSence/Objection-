@@ -9,11 +9,11 @@ export type ReviewVerdict = "pass" | "fail" | "uncertain";
 export type Mode = "auto" | "deliberate" | "review" | "verify" | "quick" | "code";
 
 export type ClaimStatus = "supported" | "refuted" | "unverified";
-export interface Source { title: string; url: string; snippet: string; engine?: string }
+export interface Source { title: string; url: string; snippet: string; engine?: string; path?: string; line?: number }
 export interface Claim {
   id: string; text: string; quote: string | null; kind: string; method: string; query?: string | null; code?: string | null;
   authors: string[]; in_answer: boolean; status: ClaimStatus; evidence: string | null; sources: Source[];
-  output?: string | null; judges: Record<string, string>; flagged: boolean;
+  output?: string | null; judges: Record<string, string>; flagged: boolean; path?: string | null; finding?: string | null;
 }
 export interface Vote { answer: string; key?: string; models: string[]; weight: number; reasoning?: string }
 export interface Candidate { model_id: string; filename: string; round: number; passed: boolean | null; explanation: string; output: string; code: string }
@@ -29,6 +29,8 @@ export interface Finding {
   confirmed_by: string[];
   refuted_by: { model_id: string; reason: string }[];
   status: "confirmed" | "disputed" | "rejected";
+  claim_id?: string | null;
+  evidence?: ClaimStatus | null;
 }
 
 export interface Verdict {
@@ -79,6 +81,10 @@ export interface Run {
   error: string | null;
   created_at: string;
   finished_at: string | null;
+  excluded_models?: { id: string; reason: string }[];
+  label?: "correct" | "wrong" | null;
+  expected?: string | null;
+  label_note?: string | null;
 }
 
 export type EventType =
@@ -95,7 +101,7 @@ export interface RunEvent {
   ts: string;
 }
 
-export interface PoolModel { id: string; model: string; local: boolean; enabled: boolean }
+export interface PoolModel { id: string; model: string; local: boolean; enabled: boolean; family?: string }
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -128,6 +134,8 @@ export interface Stats {
   budget_exhausted?: number;
   claims?: Record<string, number>;
   revised?: number;
+  labels?: Record<string, number>;
+  excluded_models?: Record<string, number>;
 }
 
 export interface ModelCheck { id: string; ok: boolean; detail: string; latency_s: number }
@@ -161,7 +169,7 @@ export interface Defaults {
 }
 export interface VerifierSettings {
   enabled: boolean; modes: string[]; web_search: boolean; searxng_url: string; search_results: number;
-  python: boolean; max_claims: number; judges: number; revise: boolean;
+  python: boolean; max_claims: number; judges: number; revise: boolean; repo?: boolean; repo_results?: number;
 }
 export interface SandboxCaps { platform: string; rlimits: boolean; network_isolated: boolean; network_isolation_available: boolean; note: string }
 export interface SandboxSettings { network: boolean; timeout_s: number; memory_mb: number; cpu_s: number; max_output_kb: number; capabilities?: SandboxCaps }
@@ -198,6 +206,8 @@ export const api = {
   run: (id: string) => fetch(`/api/runs/${id}`).then((r) => json<Run>(r)),
   models: () => fetch("/api/models").then((r) => json<PoolModel[]>(r)),
   deleteRun: (id: string) => fetch(`/api/runs/${id}`, { method: "DELETE" }).then((r) => json<{ deleted: string[] }>(r)),
+  label: (id: string, label: "correct" | "wrong" | null, expected?: string) =>
+    send<Run>("POST", `/api/runs/${id}/label`, { label, expected: expected || null }),
   deleteRuns: (ids: string[]) => send<{ deleted: string[]; skipped: string[] }>("POST", "/api/runs/delete", { ids }),
   createRun: (body: NewRun) =>
     fetch("/api/runs", {

@@ -4,7 +4,7 @@ import { CLAIM, avatarClass, letter, phase, type RunState } from "../model";
 import { CodeBlock } from "./M2Parts";
 import { FindingCard, VerdictBanner } from "./Findings";
 
-const METHOD: Record<string, string> = { search: "поиск", python: "Python", none: "без инструмента" };
+const METHOD: Record<string, string> = { search: "поиск", python: "Python", repo: "репозиторий", none: "без инструмента" };
 const SKIP: Record<string, string> = {
   "fact-checking is off": "фактчек выключен для этого запуска", "budget exhausted": "бюджет исчерпан",
 };
@@ -33,7 +33,12 @@ export function ClaimRow({ run, c, open: initial = false }: { run: Run; c: Claim
           {Object.keys(c.judges).length > 0 && (
             <div className="muted" style={{ fontSize: 12 }}>судьи: {Object.entries(c.judges).map(([m, s]) => `${m} — ${CLAIM[s]?.[1] ?? s}`).join(" · ")}</div>
           )}
-          {c.sources.map((s, i) => (
+          {c.sources.map((s, i) => s.url.startsWith("repo://") ? (
+            <div key={i} className="src">
+              <b className="mono" style={{ fontSize: 12 }}>{s.title}</b>
+              {s.snippet && <pre className="json" style={{ maxHeight: 160, margin: "4px 0 0" }}>{s.snippet}</pre>}
+            </div>
+          ) : (
             <div key={i} className="src">
               <a href={s.url} target="_blank" rel="noreferrer noopener">{s.title || s.url}</a>
               <div className="muted mono" style={{ fontSize: 11 }}>{s.url}</div>

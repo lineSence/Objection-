@@ -85,7 +85,7 @@ LiteLLM (облачные API, Ollama / vLLM / LM Studio; фоллбэки, ре
 
 - Извлечение проверяемых утверждений в Claim Ledger: факт, число, код, ссылка.
 - Инструменты: веб-поиск с цитатой, python-песочница, запуск тестов, чтение репозитория.
-- Статусы: `confirmed` / `refuted` / `unverified` + доказательство. Опровергнутое утверждение снижает вес ответа автора.
+- Статусы утверждения: `supported` / `refuted` / `unverified` + доказательство (итог инструмента `council_verify` для одного утверждения называется `confirmed` / `refuted` / `unverified`). Опровергнутое утверждение снижает вес ответа автора, в `review` — отклоняет находку.
 - Правило: непроверенный аргумент не может перевесить проверенный факт.
 - Результаты инструментов — данные, не инструкции.
 
@@ -134,10 +134,10 @@ LiteLLM (облачные API, Ollama / vLLM / LM Studio; фоллбэки, ре
 
 ## 7. Стек
 
-Python 3.12+, LiteLLM, asyncio, Pydantic (схемы и structured output), Typer (CLI), SQLite, MCP Python SDK; песочница — Docker / subprocess с лимитами; позже FastAPI + лёгкий фронт.
+Python 3.12+, LiteLLM, asyncio, Pydantic (схемы и structured output), Typer (CLI), SQLite, MCP Python SDK; песочница — subprocess с лимитами, без Docker (D-015); FastAPI + React/TypeScript для Web UI (D-011).
 
 ## 8. Открытые вопросы
 
 - Проверенные примеры конфигурации MCP для OpenCode и Cline (M1).
-- Выбор песочницы по умолчанию (Docker vs subprocess) с учётом Windows/macOS.
-- Как размечать собственный eval-набор с минимальными усилиями (разметка итогов прямо из CLI?).
+- ~~Выбор песочницы по умолчанию~~ — subprocess без Docker (D-015).
+- ~~Как размечать собственный eval-набор~~ — `objection runs label` и кнопки 👍/👎 в Web UI (D-016).
