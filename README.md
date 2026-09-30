@@ -19,11 +19,14 @@ Asking several models and letting them "debate until they agree" sounds great, b
 ## Quick start
 
 ```bash
-pip install git+https://github.com/lineSence/Objection-.git
-objection ui          # Web UI at http://127.0.0.1:8765
-objection ask "SQLite or PostgreSQL for run history?"
-git diff | objection review -    # council review of your changes
+git clone https://github.com/lineSence/Objection-.git objection && cd objection
+bash start.sh          # Linux/macOS: creates .venv, installs, opens the Web UI at http://127.0.0.1:8765
+start.bat              # Windows (or double-click it)
+bash start.sh ask "SQLite or PostgreSQL for run history?"
+git diff | bash start.sh review -    # council review of your changes
 ```
+
+Or install the `objection` command globally (handy for MCP clients): `pipx install git+https://github.com/lineSence/Objection-.git`, then `objection ui`. Details (in Russian): [docs/install.md](docs/install.md).
 
 Without a config Objection! uses offline `mock/*` models, so you can try the UI right away. Define your own pool in `~/.objection/config.yaml` (or `./objection.yaml`, or `$OBJECTION_CONFIG`) — see [the example](examples/objection.example.yaml). API keys are read by LiteLLM from the usual environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …).
 
@@ -60,6 +63,7 @@ Backend: FastAPI inside the Python package (`src/objection`). Frontend: React + 
 - [Design](docs/design.md)
 - [Research summary](docs/research.md)
 - [Decisions log](docs/decisions.md)
+- [Installation (Russian)](docs/install.md)
 - [Agent integrations (OpenCode, Cline)](docs/integrations.md)
 - [Roadmap](docs/roadmap.md)
 - [Example config](examples/objection.example.yaml)
