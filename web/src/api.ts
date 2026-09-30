@@ -4,8 +4,27 @@ export interface Usage { input_tokens: number; output_tokens: number; cost_usd: 
 
 export interface Disputed { point: string; positions: Record<string, string> }
 
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+export type ReviewVerdict = "pass" | "fail" | "uncertain";
+export type Mode = "deliberate" | "review";
+
+export interface Finding {
+  id: string;
+  title: string;
+  severity: Severity;
+  location: string | null;
+  detail: string;
+  suggestion: string | null;
+  reported_by: string[];
+  confirmed_by: string[];
+  refuted_by: { model_id: string; reason: string }[];
+  status: "confirmed" | "disputed" | "rejected";
+}
+
 export interface Verdict {
   answer: string;
+  verdict: ReviewVerdict | null;
+  findings: Finding[];
   confidence: number | null;
   agreement: string | null;
   consensus: string[];
@@ -18,8 +37,12 @@ export interface Run {
   id: string;
   question: string;
   context: string | null;
-  mode: string;
+  mode: Mode;
   source: string;
+  target: string | null;
+  target_kind: string;
+  fail_on: Severity;
+  cached: boolean;
   status: RunStatus;
   models: string[];
   budget_usd: number;
@@ -32,7 +55,7 @@ export interface Run {
 }
 
 export type EventType =
-  | "run_started" | "phase_started" | "answer" | "model_error"
+  | "run_started" | "phase_started" | "answer" | "model_error" | "critique"
   | "phase_finished" | "verdict" | "run_finished" | "run_failed";
 
 export interface RunEvent {
@@ -52,11 +75,37 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface Stats {
+  days: number;
+  runs: number;
+  by_source: Record<string, number>;
+  by_mode: Record<string, number>;
+  by_status: Record<string, number>;
+  cost_usd: number;
+  avg_cost_usd: number;
+  review_verdicts: Record<string, number>;
+  disputed_share: number | null;
+  cost_by_day: { date: string; cost_usd: number }[];
+}
+
+export interface ModelCheck { id: string; ok: boolean; detail: string; latency_s: number }
+
+export interface NewRun {
+  question: string;
+  mode?: Mode;
+  target?: string;
+  target_kind?: string;
+  context?: string;
+  models?: string[];
+}
+
 export const api = {
+  stats: (days = 7) => fetch(`/api/stats?days=${days}`).then((r) => json<Stats>(r)),
+  checkModels: () => fetch("/api/models/check", { method: "POST" }).then((r) => json<ModelCheck[]>(r)),
   runs: () => fetch("/api/runs").then((r) => json<Run[]>(r)),
   run: (id: string) => fetch(`/api/runs/${id}`).then((r) => json<Run>(r)),
   models: () => fetch("/api/models").then((r) => json<PoolModel[]>(r)),
-  createRun: (body: { question: string; context?: string; models?: string[] }) =>
+  createRun: (body: NewRun) =>
     fetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -65,7 +114,7 @@ export const api = {
 };
 
 const TERMINAL: EventType[] = ["run_finished", "run_failed"];
-const TYPES: EventType[] = ["run_started", "phase_started", "answer", "model_error", "phase_finished", "verdict", "run_finished", "run_failed"];
+const TYPES: EventType[] = ["run_started", "phase_started", "answer", "model_error", "critique", "phase_finished", "verdict", "run_finished", "run_failed"];
 
 /** Subscribe to a run's events over SSE. Replays stored events first, then streams live ones. */
 export function streamRun(id: string, onEvent: (e: RunEvent) => void): () => void {

@@ -2,7 +2,7 @@
 
 > A council of LLMs that answer independently, object to each other, verify claims with tools — and return one answer with honest disagreement.
 
-**Status:** early M0. Works today: the `deliberate` preset (independent answers → synthesis), CLI, run history in SQLite, and the Web UI (chat + run trace, light/dark themes). Design docs: [docs/](docs/).
+**Status:** M1. Works today: the `deliberate` preset (independent answers → anonymous cross-critique → synthesis), the `review` preset (independent reviews → dedupe → cross-check votes → `pass`/`fail`/`uncertain` verdict), an MCP server for OpenCode / Cline, result cache, CLI, run history in SQLite, and the Web UI (overview, chat, debate, run trace; light/dark themes). Design docs: [docs/](docs/).
 
 ## Why
 
@@ -22,6 +22,7 @@ Asking several models and letting them "debate until they agree" sounds great, b
 pip install git+https://github.com/lineSence/Objection-.git
 objection ui          # Web UI at http://127.0.0.1:8765
 objection ask "SQLite or PostgreSQL for run history?"
+git diff | objection review -    # council review of your changes
 ```
 
 Without a config Objection! uses offline `mock/*` models, so you can try the UI right away. Define your own pool in `~/.objection/config.yaml` (or `./objection.yaml`, or `$OBJECTION_CONFIG`) — see [the example](examples/objection.example.yaml). API keys are read by LiteLLM from the usual environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …).
@@ -29,6 +30,8 @@ Without a config Objection! uses offline `mock/*` models, so you can try the UI 
 | Command | What it does |
 | --- | --- |
 | `objection ask "…" [--json] [-m a,b,c] [--budget 0.2]` | Ask the council; exit code 1 on failure |
+| `objection review [FILE\|-] [--diff REF] [--staged] [--kind diff\|plan\|file\|text] [--fail-on high] [--format json]` | Council code/plan review; exit 0 pass, 1 fail, 2 uncertain, 3 error |
+| `objection mcp` | MCP server over stdio (tools `council_ask`, `council_review`, `council_models`) — see [docs/integrations.md](docs/integrations.md) |
 | `objection ui [--port 8765]` | Local Web UI (binds to 127.0.0.1) |
 | `objection models list` / `check` | Show / health-check the pool |
 | `objection runs list` / `show <id>` | Run history |
@@ -48,7 +51,7 @@ Backend: FastAPI inside the Python package (`src/objection`). Frontend: React + 
 
 - Python library
 - CLI with JSON / Markdown output and CI-friendly exit codes
-- MCP server (M1) for agentic coding tools — first targets: **OpenCode** and **Cline**
+- MCP server for agentic coding tools — **OpenCode** and **Cline** ([setup](docs/integrations.md))
 - Web UI from day one: runs dashboard, live run trace, debate and report views; light and dark themes
 - Later: HTTP API and multi-user mode
 

@@ -127,3 +127,48 @@ h3 { font-size: 14px; }
 .side { border-left: 1px solid var(--b); background: var(--s); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 pre.json { font-size: 12px; line-height: 1.55; background: var(--card); border: 1px solid var(--b); border-radius: 8px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--code); }
 .empty { margin: auto; text-align: center; color: var(--t2); padding: 40px; }
+.composer textarea.target { min-height: 160px; max-height: 40vh; font-size: 12px; line-height: 1.5; border-bottom: 1px solid var(--b); padding-bottom: 8px; }
+
+/* review */
+.verdict-banner { display: flex; align-items: center; gap: 12px; border-radius: 10px; padding: 14px 16px; border: 1px solid var(--b); background: var(--card); }
+.verdict-banner.fail { border-color: var(--r); } .verdict-banner.pass { border-color: var(--g); } .verdict-banner.uncertain { border-color: var(--o); }
+.verdict-banner .big { font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: .02em; }
+.finding { border: 1px solid var(--b); border-radius: 10px; padding: 12px 14px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
+.finding.rejected { opacity: .65; }
+.finding .hd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.finding .loc { font-size: 12px; color: var(--t2); }
+.votes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; }
+.obj { border-left: 3px solid var(--r); background: var(--rS); padding: 6px 10px; border-radius: 0 6px 6px 0; font-size: 13px; }
+.obj b { color: var(--rT); }
+.sup { border-left: 3px solid var(--g); background: var(--gS); padding: 6px 10px; border-radius: 0 6px 6px 0; font-size: 13px; }
+.target-view { max-height: 260px; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre; background: var(--card); border: 1px solid var(--b); border-radius: 8px; padding: 10px 12px; color: var(--code); }
+
+/* debate */
+.arena { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 16px; padding: 20px 24px; overflow-x: auto; align-items: stretch; }
+.col { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-width: 0; }
+.col .pos { font-size: 15px; font-weight: 600; line-height: 1.35; }
+.col .shift { font-size: 12px; color: var(--t2); display: flex; gap: 6px; align-items: flex-start; }
+.col .shift .dot { margin-top: 5px; }
+.col .r1 { margin-top: auto; border-top: 1px solid var(--b); padding-top: 10px; font-size: 12px; color: var(--t2); }
+.matrix { border-collapse: collapse; width: 100%; font-size: 13px; }
+.matrix th, .matrix td { border-bottom: 1px solid var(--s2); padding: 8px 10px; text-align: left; vertical-align: top; }
+.matrix th { font-size: 12px; color: var(--t2); font-weight: 600; }
+.cell { display: inline-flex; width: 26px; height: 22px; border-radius: 6px; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
+.cell.confirm { background: var(--gS); color: var(--gT); } .cell.refute { background: var(--rS); color: var(--rT); }
+.cell.unsure, .cell.none { background: var(--s2); color: var(--nT); } .cell.author { box-shadow: inset 0 0 0 2px var(--blue); }
+
+/* overview */
+.ov { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.kpi { padding: 14px 16px; } .kpi .v { font-size: 24px; font-weight: 700; margin-top: 2px; } .kpi .s { font-size: 12px; color: var(--t2); }
+.ovgrid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 16px; align-items: start; }
+table.runs { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.runs th { text-align: left; font-size: 12px; color: var(--t2); font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--b); }
+table.runs td { padding: 9px 12px; border-bottom: 1px solid var(--s2); white-space: nowrap; }
+table.runs td.q { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+table.runs tr { cursor: pointer; } table.runs tbody tr:hover td { background: var(--s); }
+.mrow { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--s2); }
+.mrow:last-child { border-bottom: 0; }
+.spark { display: flex; align-items: flex-end; gap: 4px; height: 72px; margin-top: 10px; }
+.spark i { flex: 1; background: var(--blueS); border-radius: 3px 3px 0 0; min-height: 2px; }
+.spark i.h { background: var(--blue); }

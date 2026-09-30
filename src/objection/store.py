@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS events (
   body TEXT NOT NULL,
   PRIMARY KEY (run_id, seq)
 );
+CREATE TABLE IF NOT EXISTS cache (
+  key TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL
+);
 """
 
 
@@ -67,3 +71,17 @@ class RunStore:
                 "SELECT body FROM events WHERE run_id=? AND seq>? ORDER BY seq", (run_id, after)
             ).fetchall()
         return [Event.model_validate_json(r[0]) for r in rows]
+
+    def delete_run(self, run_id: str) -> None:
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
+            self._db.execute("DELETE FROM runs WHERE id=?", (run_id,))
+
+    def put_cache(self, key: str, run_id: str) -> None:
+        with self._lock, self._db:
+            self._db.execute("INSERT OR REPLACE INTO cache(key, run_id) VALUES (?,?)", (key, run_id))
+
+    def get_cache(self, key: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT run_id FROM cache WHERE key=?", (key,)).fetchone()
+        return row[0] if row else None
